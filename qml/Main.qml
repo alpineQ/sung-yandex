@@ -1311,20 +1311,25 @@ ApplicationWindow {
                 Accessible.role: Accessible.Pane
                 Accessible.name: "Playback"
                 Layout.fillWidth: true; Layout.preferredHeight: 112; color: window.washed(Theme.container); radius: Theme.shapeExtraLarge
+                // Equal side regions keep the transport centered regardless of title length.
                 RowLayout {
-                    anchors.fill: parent; anchors.leftMargin: 16; anchors.rightMargin: 16; spacing: 16
+                    anchors.left: parent.left; anchors.leftMargin: 16; anchors.verticalCenter: parent.verticalCenter
+                    width: (playbackBar.width-transport.width)/2-28; spacing: 12
                     AbstractButton { id: nowButton; objectName: "nowButton"; Layout.preferredWidth: 64; Layout.preferredHeight: 64; enabled: app.currentIndex>=0; focusPolicy: Qt.StrongFocus; Accessible.name: "Now playing"; onClicked: window.activateSide("now")
                         contentItem: Artwork { id: nowArtwork; url: app.current.art || ""; motionUrl: app.currentMotionArt; crossfade:true; radius: Theme.shapeMedium; pixels: 150; fit:app.currentArtworkFit; opacity: window.coverFlying?0:1 }
                         background: Rectangle { anchors.fill: parent; anchors.margins: -3; color: "transparent"; radius: Theme.shapeLarge; border.width: parent.activeFocus?2:0; border.color: Theme.focusRing }
                     }
                     ColumnLayout {
-                        Layout.preferredWidth: Math.max(100,Math.min(220,window.width*0.17)); spacing: 6; opacity: nowPresentation.fade*window.coverDetailsOpacity; transform: Translate { x: nowPresentation.offset }
+                        visible: window.width>=700; Layout.fillWidth: true; Layout.minimumWidth: 0; spacing: 6; opacity: nowPresentation.fade*window.coverDetailsOpacity; transform: Translate { x: nowPresentation.offset }
                         AbstractButton { Layout.fillWidth: true; implicitHeight: 24; focusPolicy: Qt.StrongFocus; enabled: app.currentIndex>=0; Accessible.name: "Now playing: " + (app.current.title || "Nothing playing"); onClicked: window.activateSide("now"); contentItem: MatchText { revealFocused: parent.activeFocus; sourceText: nowPresentation.shown.title || "Nothing playing"; font.pixelSize: Theme.titleMedium; font.weight: Font.DemiBold } background: Rectangle { color: "transparent"; radius: Theme.shapeExtraSmall; border.width: parent.activeFocus?1:0; border.color: Theme.focusRing } }
                         AbstractButton { Layout.fillWidth: true; implicitHeight: 24; focusPolicy: Qt.StrongFocus; enabled: !!app.current.artistId; Accessible.name: "Go to " + (app.current.artist || "artist"); onClicked: app.open(window.relatedItem(app.current,"artist")); contentItem: MatchText { revealFocused: parent.activeFocus; sourceText: nowPresentation.shown.artist || ""; color: Theme.muted; font.pixelSize: Theme.bodyMedium } background: Rectangle { color: "transparent"; radius: Theme.shapeExtraSmall; border.width: parent.activeFocus?1:0; border.color: Theme.focusRing } }
                     }
                     MButton { symbol: "heart"; tip: app.liked?"Unlike":"Like"; toggle: true; selected: app.liked; enabled: app.currentIndex>=0; visible: window.width>=1050; onClicked: app.toggleLike(app.current) }
+                }
                     ColumnLayout {
-                        Layout.fillWidth: true; Layout.maximumWidth: 520; spacing: 0
+                        id: transport; objectName: "playerTransport"
+                        anchors.centerIn: parent
+                        width: Math.min(520,Math.max(190,playbackBar.width*0.4)); spacing: 0
                         RowLayout {
                             Layout.alignment: Qt.AlignHCenter; spacing: 6
                             MButton { objectName: "playerShuffle"; symbol: "shuffle"; tip: "Shuffle"; toggle: true; selected: app.shuffle; onClicked: app.shuffle=!app.shuffle; visible: window.width>=980 }
@@ -1340,10 +1345,13 @@ ApplicationWindow {
                             SungText { font.features: {"tnum": 1}; text: app.formatTime(app.duration); color: Theme.muted; font.pixelSize: Theme.labelSmall; labelRole: true; Layout.preferredWidth: 34; horizontalAlignment: Text.AlignRight }
                         }
                     }
-                    Item { Layout.fillWidth: true; visible: window.width>=1320 }
-                    MButton { symbol: "lyrics"; tip: "Lyrics · Ctrl+Y"; toggle: true; selected: window.side==="lyrics"; enabled: app.currentIndex>=0; onClicked: window.activateSide("lyrics") }
+                RowLayout {
+                    anchors.right: parent.right; anchors.rightMargin: 16; anchors.verticalCenter: parent.verticalCenter
+                    width: (playbackBar.width-transport.width)/2-28; spacing: 8
+                    Item { Layout.fillWidth: true; Layout.minimumWidth: 0 }
+                    MButton { visible: window.width>=980; symbol: "lyrics"; tip: "Lyrics · Ctrl+Y"; toggle: true; selected: window.side==="lyrics"; enabled: app.currentIndex>=0; onClicked: window.activateSide("lyrics") }
                     MButton {
-                        objectName: "queueButton"; symbol: "queue"; tip: "Queue · Ctrl+L"
+                        visible: window.width>=700; objectName: "queueButton"; symbol: "queue"; tip: "Queue · Ctrl+L"
                         toggle: true; selected: window.side==="queue"; onClicked: window.activateSide("queue")
                         MBadge {
                             objectName: "queueBadge"
@@ -1358,13 +1366,16 @@ ApplicationWindow {
                     // overflow menu rather than dropping it, so the controls the
                     // bar has no room for are still one click away.
                     MAppBarRow {
-                        objectName: "playerOverflow"
+                        id: playerOverflow; objectName: "playerOverflow"
                         // The bar keeps room for two of these before it folds
                         // the rest into the menu.
-                        Layout.preferredWidth: Math.min(implicitWidth, itemWidth*2 + spacing)
+                        Layout.preferredWidth: Math.min(implicitWidth, itemWidth)
                         Layout.preferredHeight: 48
                         visible: live.length > 0
                         actions: [
+                            {key:"lyrics", symbol:"lyrics", label:"Lyrics", visible:window.width<980, enabled:app.currentIndex>=0, trigger:function(){window.activateSide("lyrics")}},
+                            {key:"queue", symbol:"queue", label:"Queue", visible:window.width<700, trigger:function(){window.activateSide("queue")}},
+                            {key:"output", symbol:"chevron", label:"Audio output", visible:window.width<980, trigger:function(){outputPicker.showAt(playerOverflow)}},
                             {key:"like", symbol:"heart", label:app.liked?"Unlike":"Like", toggle:true, checked:app.liked,
                              enabled:app.currentIndex>=0, visible:window.width<1050, trigger:function(){app.toggleLike(app.current)}},
                             {key:"shuffle", symbol:"shuffle", label:"Shuffle", toggle:true, checked:app.shuffle,
@@ -1375,7 +1386,7 @@ ApplicationWindow {
                              trigger:function(){app.repeat=(app.repeat+1)%3}}
                         ]
                     }
-                    MButton {id:outputButton;objectName:"playerOutputButton";symbol:"chevron";iconWidth:"narrow";tip:"Audio output · "+app.audioDeviceName;selected:outputPicker.visible;onClicked:outputPicker.showAt(outputButton)}
+                    MButton {visible:window.width>=980;id:outputButton;objectName:"playerOutputButton";symbol:"chevron";iconWidth:"narrow";tip:"Audio output · "+app.audioDeviceName;selected:outputPicker.visible;onClicked:outputPicker.showAt(outputButton)}
                     VolumeControl {id:volumeControl;showSlider:window.width>=1160}
                 }
             }

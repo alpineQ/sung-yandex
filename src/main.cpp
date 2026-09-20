@@ -306,6 +306,19 @@ int main(int argc, char **argv) {
     if (!linked)
       QTimer::singleShot(0, &backend, &Backend::openStartPage);
   }
+  if (args.contains("--check-player-layout")) {
+    QTimer::singleShot(2200, &app, [window, &app] {
+      bool ok = true;
+      for (const auto &name : {"playButton", "seekBar"}) {
+        auto item = window->findChild<QQuickItem *>(name);
+        const double center = item ? item->mapToScene(QPointF(item->width()/2, 0)).x() : -1;
+        const double delta = center - window->width()/2.0;
+        fprintf(stdout, "%s center=%.1f window=%.1f delta=%.1f\n", name, center, window->width()/2.0, delta);
+        ok = ok && item && qAbs(delta) <= 1;
+      }
+      app.exit(ok ? 0 : 2);
+    });
+  }
   if (args.contains("--screenshot")) {
     const int i = args.indexOf("--screenshot");
     const auto path = args.value(i + 1);
