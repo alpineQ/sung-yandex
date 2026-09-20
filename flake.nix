@@ -4,7 +4,7 @@
   outputs = { self, nixpkgs }: let
     pkgs = nixpkgs.legacyPackages.x86_64-linux;
     buildInputs = with pkgs.qt6; [ qtbase qtdeclarative qtmultimedia qtsvg qtwayland qtimageformats ];
-    nativeBuildInputs = with pkgs; [ cmake ninja pkg-config python3 libsecret qt6.wrapQtAppsHook ];
+    nativeBuildInputs = with pkgs; [ cmake ninja pkg-config python3 libsecret qt6.qtshadertools qt6.wrapQtAppsHook ];
   in {
     packages.x86_64-linux.default = pkgs.stdenv.mkDerivation {
       pname = "sung-yandex";

@@ -1002,6 +1002,11 @@ private slots:
     Backend b;
     b.library("favorites");
     QCOMPARE(b.page(), "library");
+    const auto queueBefore = b.queue()->count();
+    b.openMyWave(); QCOMPARE(b.page(), "wave");
+    QCOMPARE(b.queue()->count(), queueBefore); QVERIFY(!b.yandexWaveBusy());
+    b.openMyWave(); // Re-entering the page must not add a duplicate history entry.
+    b.back(); QCOMPARE(b.page(), "library");
     auto id = b.createPlaylist("Back test");
     b.openPlaylist(id);
     QCOMPARE(b.page(), "local");

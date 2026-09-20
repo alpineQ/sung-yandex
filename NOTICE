@@ -22,3 +22,8 @@ Sung Yandex integration
 Based on Sung (MIT), upstream commit f20aaa1d6642b527f9a3ec81d6b85abe522b611d.
 Yandex API and disk-cache behavior adapted from yamusic (GPL-3.0), commit b37c11916b4a235e1eaf84176ae8862bf6a0ca22.
 The combined work is distributed under GPL-3.0. Original Sung MIT notice is preserved in licenses/Sung-MIT.txt.
+
+My Wave visualizer: shaders/mywave.frag adapts the GPL-3.0 WGSL visualizer in
+yamusic/src/app/components/visualizer_gpu.rs (simplex-noise lobes and orbits)
+to Qt Quick ShaderEffect. No Yandex proprietary animation assets are bundled.
+Visual reference: https://yandex.ru/support/music/ru/new-template/mywave

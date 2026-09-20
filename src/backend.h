@@ -500,6 +500,7 @@ public:
   Q_INVOKABLE void removeQueueRows(const QVariantList &indices);
   Q_INVOKABLE void moveQueueRows(const QVariantList &indices,int before);
   Q_INVOKABLE void home();
+  Q_INVOKABLE void openMyWave();
   Q_INVOKABLE void connectYandex(const QString &token, bool remember = true);
   Q_INVOKABLE void disconnectYandex();
   Q_INVOKABLE void syncYandexLibrary();

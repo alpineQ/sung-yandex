@@ -553,7 +553,7 @@ ApplicationWindow {
                 Layout.topMargin: 4; Layout.bottomMargin: 4
             }
             Repeater {
-                model: [{key:"home",icon:"home",label:"Home"},{key:"search",icon:"search",label:"Search"},{key:"library",icon:"library",label:"Library"}]
+                model: [{key:"home",icon:"home",label:"Home"},{key:"wave",icon:"radio",label:"Моя волна"},{key:"search",icon:"search",label:"Search"},{key:"library",icon:"library",label:"Library"}]
                 MNavigationItem {
                     required property var modelData
                     objectName: "nav_"+modelData.key
@@ -570,6 +570,7 @@ ApplicationWindow {
                         destinationTransition.fadeThrough(() => {
                             window.destination=modelData.key
                             if(modelData.key==="home")app.home()
+                            else if(modelData.key==="wave")app.openMyWave()
                             else if(modelData.key==="search"){app.startSearch();window.focusSearch();}
                             else window.applyLibrary("favorites")
                         })
@@ -881,7 +882,7 @@ ApplicationWindow {
                             collapse: content.headerCollapse
                         }
                         RowLayout {
-                            visible: !window.artistPage
+                            visible: !window.artistPage && app.page!=="wave"
                             Layout.fillWidth: true; spacing: 16
                             Artwork { id:collectionArtwork;objectName:"collectionArtwork";opacity:window.albumFlying?0:1;visible: !!app.cover; url: app.cover; Layout.preferredWidth: content.headerExtent; Layout.preferredHeight: content.headerExtent; radius: (app.page==="artist" || app.page==="local-artist") ? width/2 : app.albumInfo.summary?24:12; shape: (app.page==="artist" || app.page==="local-artist") ? "cookie9Sided" : ""; pixels: app.albumInfo.summary?384:180
                                 AbstractButton {anchors.fill:parent;objectName:"inspectCollectionArtwork";Accessible.name:"View artwork";focusPolicy:Qt.StrongFocus;onClicked:artworkViewer.inspect(app.cover)
@@ -930,7 +931,7 @@ ApplicationWindow {
                         }
                         RowLayout {
                             visible: app.page==="home"; Layout.fillWidth: true
-                            MButton { objectName: "myWaveButton"; text: "My Wave"; tonal: true; busy: app.yandexWaveBusy; enabled: !app.yandexWaveBusy; onClicked: app.startYandexWave() }
+                            MButton { objectName: "myWaveButton"; text: "My Wave"; tonal: true; busy: app.yandexWaveBusy; enabled: !app.yandexWaveBusy; onClicked: app.openMyWave() }
                             MButton { text: "Stop wave"; visible: app.yandexWaveActive || app.yandexWaveBusy; onClicked: app.stopYandexWave() }
                         }
                         Flow {
@@ -1131,6 +1132,11 @@ ApplicationWindow {
                                 SungText {text:"Home sections are hidden";color:Theme.muted;anchors.horizontalCenter:parent.horizontalCenter}
                                 MButton {objectName:"restoreHomeSections";text:"Restore sections";tonal:true;anchors.horizontalCenter:parent.horizontalCenter;onClicked:app.resetHomeLayout()}
                             }
+                            Loader {
+                                anchors.fill: parent
+                                active: app.page==="wave"
+                                sourceComponent: Component { MyWavePage { active: window.visible && window.visibility!==Window.Minimized && app.page==="wave"; onQueueRequested: window.side=window.side==="queue"?"":"queue" } }
+                            }
                             CatalogSkeleton { anchors.fill: parent; loading: app.busy && app.results.count===0 && window.homeSections.length===0; cards: app.page==="home" || app.page==="artist" }
                             ListView {
                                 id: shelves; objectName: "homeShelves"; anchors.fill: parent
@@ -1173,7 +1179,7 @@ ApplicationWindow {
                             TrackList {
                                 id: tracks; groupDiscs: !!app.albumInfo.multipleDiscs && app.collection.sortKey==="original"; objectName: "tracksView"; anchors.fill: parent; clip: true
                                 bottomMargin: libraryFab.visible ? libraryFab.height+24 : 0
-                                visible: !localGroups.visible && !window.feedShowing && !(window.destination==="library"&&window.libraryTab==="playlists"&&!window.localPlaylist)
+                                visible: app.page!=="wave" && !localGroups.visible && !window.feedShowing && !(window.destination==="library"&&window.libraryTab==="playlists"&&!window.localPlaylist)
                                 groupFolders: app.page==="library" && app.libraryId==="files" && app.collection.sortKey==="folder"
                                 model: app.collection; reuseItems: true; cacheBuffer: 100; boundsBehavior: Flickable.StopAtBounds
                                 queueMode: false; reorderEnabled: (window.editableLocal || app.serverPlaylistEditable) && app.collection.sortKey==="original" && !app.collection.query
@@ -1376,14 +1382,15 @@ ApplicationWindow {
                 visible: window.compactWindow
                 // A window with little height to spare takes Material's short
                 // bar, which sets each label beside its icon instead of under.
-                short: window.height < 700
-                destinations: [{key:"home",icon:"home",label:"Home"},{key:"search",icon:"search",label:"Search"},{key:"library",icon:"library",label:"Library",badged:app.importingLocal}]
+                short: window.height < 700 && window.width >= 600
+                destinations: [{key:"home",icon:"home",label:"Home"},{key:"wave",icon:"radio",label:"Моя волна"},{key:"search",icon:"search",label:"Search"},{key:"library",icon:"library",label:"Library",badged:app.importingLocal}]
                 current: window.destination
                 onChosen: key => {
                     if(window.destination===key)return
                     destinationTransition.fadeThrough(() => {
                         window.destination=key
                         if(key==="home")app.home()
+                        else if(key==="wave")app.openMyWave()
                         else if(key==="search"){app.startSearch();window.focusSearch();}
                         else window.applyLibrary("favorites")
                     })
@@ -1542,7 +1549,7 @@ ApplicationWindow {
             anchors.fill: parent
             spacing: 4
             Repeater {
-                model: [{key:"home",icon:"home",label:"Home"},{key:"search",icon:"search",label:"Search"},{key:"library",icon:"library",label:"Library"}]
+                model: [{key:"home",icon:"home",label:"Home"},{key:"wave",icon:"radio",label:"Моя волна"},{key:"search",icon:"search",label:"Search"},{key:"library",icon:"library",label:"Library"}]
                 MNavigationItem {
                     required property var modelData
                     objectName: "drawerNav_"+modelData.key
@@ -1556,6 +1563,7 @@ ApplicationWindow {
                         if(window.destination===modelData.key)return
                         window.destination=modelData.key
                         if(modelData.key==="home")app.home()
+                        else if(modelData.key==="wave")app.openMyWave()
                         else if(modelData.key==="search"){app.startSearch();window.focusSearch();}
                         else window.applyLibrary("favorites")
                     }
@@ -2016,7 +2024,7 @@ ApplicationWindow {
                     busy: app.yandexBusy
                     onClicked: { app.connectYandex(yandexToken.text, rememberYandex.checked); yandexToken.clear(); }
                 }
-                MButton { text: app.yandexWaveBusy ? "Loading My Wave…" : "My Wave"; tonal: true; enabled: !app.yandexWaveBusy; busy: app.yandexWaveBusy; onClicked: { settingsDialog.close(); app.startYandexWave(); } }
+                MButton { text: app.yandexWaveBusy ? "Loading My Wave…" : "My Wave"; tonal: true; enabled: !app.yandexWaveBusy; busy: app.yandexWaveBusy; onClicked: { settingsDialog.close(); app.openMyWave(); } }
                 MButton { text: "Stop extending My Wave"; visible: app.yandexWaveActive || app.yandexWaveBusy; onClicked: app.stopYandexWave() }
                 SungText { text: "Audio downloads"; color: Theme.muted }
                 MSegmentedControl { Layout.fillWidth: true; accessibleName: "Audio downloads"; options: [{key:"auto",label:"Automatic"},{key:"manual",label:"Manual"},{key:"off",label:"Off"}]; value: app.yandexCacheMode; onChosen: value=>app.yandexCacheMode=value }
@@ -2154,6 +2162,7 @@ ApplicationWindow {
             Qt.callLater(window.restoreView);if(window.albumFlying && !window.albumOpening && !app.busy)albumSettle.restart();
             if(!app.collection.query && app.collection.sortKey==="original")window.collectionTools=false;
             if(app.page==="home"){window.destination="home";window.localPlaylist="";searchField.clear();app.clearListPane();}
+            else if(app.page==="wave"){window.destination="wave";window.localPlaylist="";searchField.clear();app.clearListPane();}
             else if(app.page==="server"){window.destination="library";window.libraryTab="server";window.localPlaylist="";searchField.suggestions=[];searchField.text=app.serverRequest.query || "";}
             else if(app.page==="library" || app.page==="local" || app.page==="local-album" || app.page==="local-artist"){
                 window.destination="library";

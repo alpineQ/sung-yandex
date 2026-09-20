@@ -343,3 +343,7 @@ void Backend::pruneYandexCache() {
     if (m_page == "home") home();
   });
 }
+
+void Backend::openMyWave() {
+  if (m_page != "wave") navigate("wave", "Моя волна");
+}

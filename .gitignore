@@ -74,3 +74,7 @@ settings.json
 !/licenses/Sung-MIT.txt
 
 !/helper/yandex*.py
+
+!/shaders/
+/shaders/*
+!/shaders/*.frag

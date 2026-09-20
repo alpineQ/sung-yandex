@@ -167,6 +167,7 @@ int main(int argc, char **argv) {
       auto v = QString::fromUtf8(socket->readAll());
       if (v.startsWith("https://"))
         backend.openLink(v);
+      if(v=="--my-wave")backend.openMyWave();
       if(v=="--mini")QMetaObject::invokeMethod(window,"openMiniPlayer");
       else emit backend.raiseRequested();
       socket->disconnectFromServer();
@@ -292,6 +293,8 @@ int main(int argc, char **argv) {
       qInfo() << "STREAM_FAILED" << backend.error();
       app.exit(2);
     });
+  } else if (args.contains("--my-wave")) {
+    backend.openMyWave();
   } else if (!args.contains("--offline")) {
     bool linked = false;
     for (const auto &a : args)
