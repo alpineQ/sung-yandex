@@ -72,7 +72,7 @@ private slots:
     qputenv("SUNG_HELPER", qgetenv("SUNG_FIXTURE_HELPER")); qputenv("SUNG_PYTHON", "python3");
     const auto restore = qScopeGuard([&] { qputenv("SUNG_HELPER", helper); qputenv("SUNG_PYTHON", python); });
     Backend b; b.setPrepareNext(false); b.setAutoplay(false); b.setYandexCacheMode("manual");
-    b.startYandexWave(); QVERIFY(b.yandexWaveBusy());
+    b.openMyWave(); b.toggle(); QVERIFY(b.yandexWaveBusy());
     QTRY_VERIFY_WITH_TIMEOUT(!b.yandexWaveBusy(), 5000);
     QVERIFY(b.yandexWaveActive()); QCOMPARE(b.queue()->count(), 5);
     b.cancel("play"); b.m_waveStartedToken = b.m_trackToken; b.m_wavePlayedMs = 2300;

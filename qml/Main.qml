@@ -510,6 +510,7 @@ ApplicationWindow {
         anchors.fill: parent; spacing: 0
         ColumnLayout {
             id: navigationRail
+            Layout.bottomMargin: 128
             objectName: "navigationRail"
             Accessible.role: Accessible.Pane
             Accessible.name: "Navigation"
@@ -874,7 +875,7 @@ ApplicationWindow {
                         // transform keeps that off the layout's own geometry.
                         property real shift: 0
                         transform: Translate { x: contentColumn.shift }
-                        anchors.fill: parent; anchors.margins: localGroups.visible?Math.max(12,window.paneMargin-8):window.paneMargin; spacing: app.page==="server"?8:localGroups.visible?12:18
+                        anchors.fill: parent; anchors.margins: app.page==="wave"?0:localGroups.visible?Math.max(12,window.paneMargin-8):window.paneMargin; spacing: app.page==="server"?8:localGroups.visible?12:18
                         ArtistHero {
                             objectName: "artistHero"
                             Layout.fillWidth: true
@@ -1135,7 +1136,7 @@ ApplicationWindow {
                             Loader {
                                 anchors.fill: parent
                                 active: app.page==="wave"
-                                sourceComponent: Component { MyWavePage { active: window.visible && window.visibility!==Window.Minimized && app.page==="wave"; onQueueRequested: window.side=window.side==="queue"?"":"queue" } }
+                                sourceComponent: Component { MyWavePage { active: window.visible && window.visibility!==Window.Minimized && app.page==="wave" } }
                             }
                             CatalogSkeleton { anchors.fill: parent; loading: app.busy && app.results.count===0 && window.homeSections.length===0; cards: app.page==="home" || app.page==="artist" }
                             ListView {
@@ -1302,7 +1303,11 @@ ApplicationWindow {
                 }
             }
             Rectangle {
+                id: playbackBar
                 objectName: "playbackBar"
+                // Span the window, including the space below the navigation rail.
+                Layout.leftMargin: window.compactWindow ? 0 : 16-navigationRail.width
+                Layout.rightMargin: window.compactWindow ? 12 : 0
                 Accessible.role: Accessible.Pane
                 Accessible.name: "Playback"
                 Layout.fillWidth: true; Layout.preferredHeight: 112; color: window.washed(Theme.container); radius: Theme.shapeExtraLarge
@@ -1324,7 +1329,7 @@ ApplicationWindow {
                             Layout.alignment: Qt.AlignHCenter; spacing: 6
                             MButton { objectName: "playerShuffle"; symbol: "shuffle"; tip: "Shuffle"; toggle: true; selected: app.shuffle; onClicked: app.shuffle=!app.shuffle; visible: window.width>=980 }
                             MButton { symbol: "previous"; tip: "Previous · Ctrl+←"; enabled: app.queue.count>0; onClicked: app.previous() }
-                            MButton { objectName: "playButton"; morphPlayback:true; symbol: app.playing||app.resolving?"pause":"play"; tip: app.playing||app.resolving?"Pause · Space":"Play · Space"; filled: true; size: "medium"; implicitWidth: 72; enabled: app.queue.count>0; onClicked: app.toggle(); busy: app.buffering }
+                            MButton { objectName: "playButton"; morphPlayback:true; symbol: app.page==="wave" && !app.yandexWaveActive ? "play" : app.playing||app.resolving?"pause":"play"; tip: app.page==="wave" && !app.yandexWaveActive ? "Start My Wave · Space" : app.playing||app.resolving?"Pause · Space":"Play · Space"; filled: true; size: "medium"; implicitWidth: 72; enabled: app.queue.count>0 || app.page==="wave"; onClicked: app.toggle(); busy: app.buffering || app.yandexWaveBusy }
                             MButton { symbol: "next"; tip: "Next · Ctrl+→"; enabled: app.queue.count>0; onClicked: app.next() }
                             MButton { symbol: app.repeat===2?"repeat_one":"repeat"; tip: app.repeat===0?"Repeat off":app.repeat===1?"Repeat queue":"Repeat song"; toggle: true; selected: app.repeat>0; onClicked: app.repeat=(app.repeat+1)%3; visible: window.width>=980 }
                         }

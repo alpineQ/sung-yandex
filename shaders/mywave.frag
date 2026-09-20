@@ -10,6 +10,9 @@ layout(std140, binding = 0) uniform buf {
     float amplitude;
     float glow;
     vec2 viewport;
+    vec4 tint1;
+    vec4 tint2;
+    vec4 tint3;
 };
 vec4 perm(vec4 v) { return mod(((v * 34.0) + 1.0) * v, 289.0); }
 float simplex3(vec3 pos) {
@@ -40,10 +43,10 @@ float simplex3(vec3 pos) {
 }
 vec2 spin(vec2 v,float a) { return mat2(cos(a),sin(a),-sin(a),cos(a))*v; }
 void main() {
-    vec2 uv=(qt_TexCoord0*2.0-1.0)*viewport/max(min(viewport.x,viewport.y),1.0)*1.85;
+    vec2 uv=(qt_TexCoord0*2.0-1.0)*viewport/max(min(viewport.x,viewport.y),1.0)*1.35;
     uv.y=-uv.y;
-    vec3 top[3]=vec3[3](vec3(0.48,0.13,1.0),vec3(1.0,0.16,0.42),vec3(1.0,0.7,0.12));
-    vec3 bottom[3]=vec3[3](vec3(0.16,0.4,1.0),vec3(0.82,0.12,0.95),vec3(1.0,0.3,0.17));
+    vec3 top[3]=vec3[3](tint1.rgb,tint2.rgb,tint3.rgb);
+    vec3 bottom[3]=vec3[3](mix(tint1.rgb,tint2.rgb,0.4),mix(tint2.rgb,tint1.rgb,0.4),mix(tint3.rgb,tint2.rgb,0.22));
     vec3 orbit[3]=vec3[3](vec3(0.5,0.5,0.2),vec3(0.2,0.8,-0.3),vec3(0.8,0.2,0.4));
     vec3 color=vec3(0.0); float alpha=0.0;
     for(int i=0;i<3;i++) {

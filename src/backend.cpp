@@ -914,6 +914,10 @@ void Backend::previous() {
     seek(0);
 }
 void Backend::toggle() {
+  if (m_page == "wave" && !yandexWaveActive()) {
+    if (yandexWaveBusy()) stopYandexWave(); else startYandexWave();
+    return;
+  }
   if (playing() || m_resolving)
     pause();
   else
