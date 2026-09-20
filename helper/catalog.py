@@ -273,7 +273,7 @@ def playlist_cleanup(req):
                 canonical = path
             key = 'file:' + canonical
         else:
-            key = 'youtube:' + (row.get('videoId') or row.get('id') or str(index))
+            key = 'yandex:' + (row.get('videoId') or row.get('id') or str(index))
         duplicate = key in seen
         seen.add(key)
         if missing or duplicate: issues.append({'index':index, 'duplicate':duplicate, 'missing':missing})

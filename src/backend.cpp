@@ -242,14 +242,14 @@ void Backend::request(const QString &channel, QVariantMap args, Callback done, s
   if (helper.isEmpty())
     helper = QCoreApplication::applicationDirPath() + "/../helper/catalog.py";
   if (!QFile::exists(helper))
-    helper = QCoreApplication::applicationDirPath() + "/../lib/sung/catalog.py";
+    helper = QCoreApplication::applicationDirPath() + "/../lib/sung-yandex/catalog.py";
   QString python = qEnvironmentVariable("SUNG_PYTHON");
   if (python.isEmpty()) {
     auto bundled =
         QCoreApplication::applicationDirPath() + "/../runtime/bin/python";
     if (!QFile::exists(bundled))
       bundled = QCoreApplication::applicationDirPath() +
-                "/../lib/sung/runtime/bin/python";
+                "/../lib/sung-yandex/runtime/bin/python";
     python = QFile::exists(bundled) ? bundled : QStringLiteral("python3");
   }
   auto timer = new QTimer(p);
@@ -266,7 +266,7 @@ void Backend::request(const QString &channel, QVariantMap args, Callback done, s
             m_processes.remove(channel);
             done({{"ok", false},
                   {"error",
-                   "YouTube helper could not start. Run scripts/setup.sh."}});
+                   "Music helper could not start. Install Python 3.11 or newer."}});
             p->deleteLater();
           });
   connect(p, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this,
@@ -279,7 +279,7 @@ void Backend::request(const QString &channel, QVariantMap args, Callback done, s
             QVariantMap result = obj.toVariantMap();
             if (result.isEmpty())
               result = {{"ok", false},
-                        {"error", "YouTube helper returned no data. Check the "
+                        {"error", "Music helper returned no data. Check the "
                                   "installation and connection."}};
             p->deleteLater();
             done(result);
@@ -296,11 +296,11 @@ void Backend::notifyError(const QString &message, const QString &retryTarget) {
   if (m_error.contains("Unable to download") ||
       m_error.contains("ConnectionError") || m_error.contains("timed out"))
     m_error =
-        "Couldn’t connect to YouTube. Check your connection and try again.";
+        "Couldn’t connect to Yandex Music. Check your connection and try again.";
   else if (m_error.contains("Sign in") || m_error.contains("sign in") ||
            m_error.contains("bot"))
     m_error =
-        "YouTube requires sign-in for this track. Import cookies in Settings.";
+        "Yandex Music requires an OAuth token. Connect in Settings.";
   else if (m_error.contains("not available") ||
            m_error.contains("Video unavailable"))
     m_error = "This track isn’t available. Try another upload.";
@@ -389,6 +389,16 @@ void Backend::retry() {
   }
   else if (target == "catalog")
     refresh();
+}
+void Backend::connectYandex(const QString &token) {
+  const auto value = token.trimmed();
+  if (value.isEmpty() || value.contains('\n') || value.contains('\r')) {
+    notifyError("Enter a valid Yandex Music OAuth token.");
+    return;
+  }
+  // Session-only credential: inherited by workers, never written to settings.
+  qputenv("YANDEX_MUSIC_TOKEN", value.toUtf8());
+  home();
 }
 void Backend::home() { browseRequest({{"op", "home"}}, m_page != "home"); }
 void Backend::search(const QString &query, const QString &filter) {
@@ -505,7 +515,7 @@ void Backend::open(const QVariantMap &item) {
 }
 void Backend::openLink(const QString &url) {
   browseRequest(
-      {{"op", "link"}, {"url", url.trimmed()}, {"title", "YouTube Music"}});
+      {{"op", "link"}, {"url", url.trimmed()}, {"title", "Yandex Music"}});
 }
 // The song playing now is at the head of history; what the queue panel looks
 // back over is everything before it.
@@ -969,7 +979,7 @@ void Backend::applyLyrics(const QVariantMap &data) {
   m_lyricsBusy=false;m_lyricsLoaded=data.value("ok").toBool();
   m_lyricLines=data.contains("lrc")?Lrc::parse(data.value("lrc").toString(),duration()):data.value("lines").toList();
   m_lyrics=m_lyricLines.isEmpty()?data.value("lyrics").toString():Lrc::plain(m_lyricLines);
-  m_lyricsSource=m_lyrics.isEmpty()?QString():data.value("source","YouTube").toString();
+  m_lyricsSource=m_lyrics.isEmpty()?QString():data.value("source","Yandex Music").toString();
   emit positionChanged();emit lyricsChanged();
 }
 void Backend::fetchLyrics() {
@@ -1216,13 +1226,14 @@ QString Backend::sleepLabel() const {
 void Backend::copyLink(const QVariantMap &t) {
   if(isServerSource(t.value("source"))){QGuiApplication::clipboard()->setText(t.value("title").toString()+" — "+t.value("artist").toString());emit toast("Song details copied");return;}
   if(!t.value("localPath").toString().isEmpty()){QGuiApplication::clipboard()->setText(t.value("localPath").toString());emit toast("Path copied");return;}
-  QString url = "https://music.youtube.com/";
+  QString url = "https://music.yandex.ru/";
+  const auto id = t.value("id").toString().mid(3);
   if (!t.value("videoId").toString().isEmpty())
-    url += "watch?v=" + t.value("videoId").toString();
+    url += "track/" + t.value("videoId").toString().mid(3).section(':', 0, 0);
   else if (t.value("kind") == "playlist")
-    url += "playlist?list=" + t.value("id").toString();
+    url += "users/" + id.section(':', 0, 0) + "/playlists/" + id.section(':', 1, 1);
   else
-    url += "browse/" + t.value("id").toString();
+    url += t.value("kind").toString() + "/" + id;
   QGuiApplication::clipboard()->setText(url);
   emit toast("Link copied");
 }
@@ -2242,7 +2253,7 @@ QString Backend::saveSmartPlaylist(const QString &id,const QString &name,const Q
   for(int i=0;i<m_playlists.size();++i){const auto p=m_playlists[i].toMap();count+=p.contains("rules");if(p.value("id")==id)index=i;}
   if(id.isEmpty() && count>=32){emit toast("You can save up to 32 smart playlists");return {};}
   if(!id.isEmpty() && (index<0 || !m_playlists[index].toMap().contains("rules")))return {};
-  auto source=input.value("source").toString();if(!QStringList{"local","youtube","subsonic"}.contains(source))source="any";
+  auto source=input.value("source").toString();if(!QStringList{"local","yandex","subsonic"}.contains(source))source="any";
   int days=input.value("days").toInt();if(!QList<int>{0,-1,7,30,90,365}.contains(days))days=0;
   // Ranges are stored only when both ends make sense, so an empty field never
   // silently excludes every song that simply has no year or duration tag.
@@ -2285,7 +2296,7 @@ QVariantList Backend::playlistRows(const QVariantMap &p) const {
       const int seconds=t.value("seconds").toInt();
       if(seconds<=0||(shortest&&seconds<shortest)||(longest&&seconds>longest))continue;
     }
-    const auto source=isServerSource(t.value("source"))?"subsonic":!t.value("localPath").toString().isEmpty()?"local":"youtube";
+    const auto source=isServerSource(t.value("source"))?"subsonic":!t.value("localPath").toString().isEmpty()?"local":"yandex";
     const auto wanted=rules.value("source","any").toString();if(wanted!="any" && wanted!=source)continue;
     if(rules.value("likedOnly").toBool() && !(isServerSource(t.value("source"))?m_server.isStarred(id):likedIds.contains(id)))continue;
     const bool played=m_lastPlayed.contains(id);const auto time=m_lastPlayed.value(id).toLongLong();
@@ -2308,7 +2319,7 @@ QVariantList Backend::trackDetails(const QVariantMap &track) const {
   if(trackNumber>0)add("Track",discNumber>0?QString("%1 on disc %2").arg(trackNumber).arg(discNumber):QString::number(trackNumber));
   else if(discNumber>0)add("Disc",QString::number(discNumber));
   const auto path=track.value("localPath").toString();
-  add("Source",isServerSource(track.value("source"))?"Music server":path.isEmpty()?"YouTube Music":"Local file");
+  add("Source",isServerSource(track.value("source"))?"Music server":path.isEmpty()?"Yandex Music":"Local file");
   const int seconds=track.value("seconds").toInt();if(seconds>0)add("Duration",QString("%1:%2").arg(seconds/60).arg(seconds%60,2,10,QChar('0')));
   if(!path.isEmpty()) {const QFileInfo file(path);add("File",path);add("Format",file.suffix().toUpper());add("Available",file.isFile()?"Yes":"File missing");if(file.isFile())add("Size",QLocale().formattedDataSize(file.size()));}
   if(track.value("id")==current().value("id") && !m_media().source().isEmpty()){

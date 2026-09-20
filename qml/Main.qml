@@ -639,7 +639,7 @@ ApplicationWindow {
                             placeholderText: app.page==="server"?"Search server":"Search music"; placeholderTextColor: Theme.muted
                             color: Theme.text; selectionColor: Theme.primaryContainer; selectedTextColor: Theme.text
                             font.pixelSize: Theme.bodyLarge; background: null; selectByMouse: true
-                            Accessible.name: app.page==="server"?"Search music server":"Search songs, albums, artists, playlists, or paste a YouTube link"
+                            Accessible.name: app.page==="server"?"Search music server":"Search songs, albums, artists, playlists, or paste a Yandex Music link"
                             property var suggestions: []
                             property int highlighted: -1
                             property bool dismissed: false
@@ -932,7 +932,7 @@ ApplicationWindow {
                             objectName: "searchFilters"
                             visible: app.page==="search"; Layout.fillWidth: true; spacing: 8
                             Repeater {
-                                model: [{label:"Songs",key:"songs"},{label:"Albums",key:"albums"},{label:"Artists",key:"artists"},{label:"Playlists",key:"playlists"},{label:"Videos",key:"videos"}]
+                                model: [{label:"Songs",key:"songs"},{label:"Albums",key:"albums"},{label:"Artists",key:"artists"},{label:"Playlists",key:"playlists"}]
                                 MChip { required property var modelData; objectName: "filter_"+modelData.key; text: modelData.label; selected: window.filter===modelData.key; onClicked: {window.filter=modelData.key;if(searchField.text.trim())app.search(searchField.text,window.filter);} }
                             }
                         }
@@ -1862,7 +1862,7 @@ ApplicationWindow {
                 ColumnLayout {
                     id: settingsGroup0; objectName:"settingsGroup0"
                     Layout.fillWidth:true;Layout.minimumWidth:0; spacing:12
-                    property bool hasMatches: settingsDialog.matches("Appearance theme system Noctalia light dark") || settingsDialog.matches("Appearance artwork accent color") || settingsDialog.matches("Accent color source palette") || settingsDialog.matches("Ambient artwork backdrop immersive now playing") || settingsDialog.matches("Backdrop follows the music audio") || settingsDialog.matches("Color scheme variant neutral tonal spot vibrant expressive content") || settingsDialog.matches("Contrast standard medium high accessibility") || settingsDialog.matches("Density compact comfortable spacing") || settingsDialog.matches("Pointer density precise mouse touch target") || settingsDialog.matches("Current view layout density grid list") || (!!app.current.id && settingsDialog.matches("Current artwork")) || settingsDialog.matches("Animated album artwork") || settingsDialog.matches("Online animated covers YouTube Apple Music") || settingsDialog.matches("Animations")
+                    property bool hasMatches: settingsDialog.matches("Appearance theme system Noctalia light dark") || settingsDialog.matches("Appearance artwork accent color") || settingsDialog.matches("Accent color source palette") || settingsDialog.matches("Ambient artwork backdrop immersive now playing") || settingsDialog.matches("Backdrop follows the music audio") || settingsDialog.matches("Color scheme variant neutral tonal spot vibrant expressive content") || settingsDialog.matches("Contrast standard medium high accessibility") || settingsDialog.matches("Density compact comfortable spacing") || settingsDialog.matches("Pointer density precise mouse touch target") || settingsDialog.matches("Current view layout density grid list") || (!!app.current.id && settingsDialog.matches("Current artwork")) || settingsDialog.matches("Animated album artwork") || settingsDialog.matches("Online animated covers Yandex Music Apple Music") || settingsDialog.matches("Animations")
                     visible: settingsDialog.searchQuery.trim() ? hasMatches : settingsDialog.category===0
                     SungText {heading: true;text:"Appearance";font.pixelSize:Theme.titleLarge;font.weight:Font.Medium;Layout.bottomMargin:8}
                     ColumnLayout {id:options0;objectName:"settingsRows0";Layout.fillWidth:true;Layout.minimumWidth:0;spacing:12
@@ -1916,7 +1916,7 @@ ApplicationWindow {
                 MSettingRow {opens:true;objectName:"viewLayoutButton";text:"Current view layout";visible:settingsDialog.matches("Current view layout density grid list");onClicked:{settingsDialog.close();viewLayoutDialog.open();}}
                 MSettingRow {opens:true;text:"Current artwork";visible:!!app.current.id && settingsDialog.matches("Current artwork");onClicked:{settingsDialog.close();artworkControls.open();}}
                 MSwitch { Layout.fillWidth:true;Layout.minimumWidth:0; objectName: "animatedArtworkSwitch"; visible: settingsDialog.matches("Animated album artwork"); text: "Animated album artwork"; checked: app.animatedArtwork; onToggled: app.animatedArtwork=checked }
-                MSwitch { Layout.fillWidth:true;Layout.minimumWidth:0; objectName: "onlineArtworkSwitch"; visible: settingsDialog.matches("Online animated covers YouTube Apple Music"); text: "Online animated covers"; checked: app.onlineArtwork; onToggled: app.onlineArtwork=checked }
+                MSwitch { Layout.fillWidth:true;Layout.minimumWidth:0; objectName: "onlineArtworkSwitch"; visible: settingsDialog.matches("Online animated covers Yandex Music Apple Music"); text: "Online animated covers"; checked: app.onlineArtwork; onToggled: app.onlineArtwork=checked }
                 MSwitch { Layout.fillWidth:true;Layout.minimumWidth:0; visible: settingsDialog.matches("Animations"); text: "Animations"; checked: app.motion; onToggled: app.motion=checked }
                     }
                 }
@@ -1981,15 +1981,28 @@ ApplicationWindow {
                 ColumnLayout {
                     id: settingsGroup3; objectName:"settingsGroup3"
                     Layout.fillWidth:true;Layout.minimumWidth:0; spacing:12
-                    property bool hasMatches: settingsDialog.matches("Music server library") || settingsDialog.matches("YouTube cookies import replace remove sign in")
+                    property bool hasMatches: settingsDialog.matches("Music server library") || settingsDialog.matches("Yandex Music OAuth token connect offline cache")
                     visible: settingsDialog.searchQuery.trim() ? hasMatches : settingsDialog.category===3
                     SungText {heading: true;text:"Connections";font.pixelSize:Theme.titleLarge;font.weight:Font.Medium;Layout.bottomMargin:8}
                     ColumnLayout {id:options3;objectName:"settingsRows3";Layout.fillWidth:true;Layout.minimumWidth:0;spacing:12
                 MSettingRow {opens:true;objectName:"musicServerButton";text:"Music server";visible:settingsDialog.matches("Music server library");onClicked:{settingsDialog.close();serverConnection.open()}}
-                SungText { visible: settingsDialog.matches("YouTube cookies import replace remove sign in"); text: "YouTube"; font.pixelSize: Theme.labelLarge; font.weight: Font.Medium; color: Theme.muted; Layout.topMargin: 12 }
-                MSettingRow {opens:true;objectName:"cookieButton";text:app.cookies?"Replace cookies":"Import cookies";visible:settingsDialog.matches("YouTube cookies import replace remove sign in");onClicked:window.openFileDialog("cookies")}
-                MSettingRow {text:"Remove cookies";visible:!!app.cookies && settingsDialog.matches("YouTube cookies import replace remove sign in");onClicked:app.clearCookies()}
-                SungText { visible: settingsDialog.matches("YouTube cookies import replace remove sign in"); text: "Optional cookies.txt for tracks that require sign-in. Your library stays on this device."; wrapMode: Text.Wrap; Layout.fillWidth: true;Layout.minimumWidth:0; color: Theme.muted; font.pixelSize: Theme.bodyMedium }
+                SungText { text: "Yandex Music"; font.pixelSize: Theme.labelLarge; color: Theme.muted }
+                MTextField {
+                    id: yandexToken; objectName: "yandexToken"
+                    Layout.fillWidth: true; Layout.minimumWidth: 0
+                    label: "OAuth token"; echoMode: TextInput.Password
+                    onAccepted: { app.connectYandex(text); clear(); }
+                }
+                MButton {
+                    objectName: "connectYandexButton"; text: "Connect Yandex Music"; tonal: true
+                    enabled: yandexToken.text.trim().length > 0
+                    onClicked: { app.connectYandex(yandexToken.text); yandexToken.clear(); }
+                }
+                SungText {
+                    text: "The token stays in memory for this session. You can also launch with YANDEX_MUSIC_TOKEN. Played songs are downloaded automatically; Home → Downloaded works offline. Hearts and custom playlists are stored on this device."
+                    wrapMode: Text.Wrap; Layout.fillWidth: true; Layout.minimumWidth: 0
+                    color: Theme.muted; font.pixelSize: Theme.bodyMedium
+                }
                     }
                 }
                 ColumnLayout {

@@ -38,7 +38,7 @@ public:
     if(role==Qt::UserRole+2) return CollectionView::folder(rows[i.row()].toMap());
     if(role==Qt::UserRole+1) {
       const auto t=rows[i.row()].toMap();
-      return isServerSource(t.value("source")) ? "Music server" : !t.value("localPath").toString().isEmpty() ? "Local files" : "YouTube Music";
+      return isServerSource(t.value("source")) ? "Music server" : !t.value("localPath").toString().isEmpty() ? "Local files" : "Yandex Music";
     }
     return {};
   }
@@ -492,6 +492,7 @@ public:
   Q_INVOKABLE void removeQueueRows(const QVariantList &indices);
   Q_INVOKABLE void moveQueueRows(const QVariantList &indices,int before);
   Q_INVOKABLE void home();
+  Q_INVOKABLE void connectYandex(const QString &token);
   Q_INVOKABLE void search(const QString &query,
                           const QString &filter = "songs");
   Q_INVOKABLE void open(const QVariantMap &item);

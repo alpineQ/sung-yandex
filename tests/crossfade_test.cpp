@@ -63,7 +63,7 @@ private slots:
     const auto helper = QFileInfo(QString::fromUtf8(qgetenv("SUNG_FIXTURE_HELPER")))
                             .dir().absoluteFilePath("../helper/catalog.py");
     qputenv("SUNG_HELPER", helper.toUtf8());
-    qputenv("SUNG_PYTHON", "/usr/bin/python3");
+    qputenv("SUNG_PYTHON", "python3");
     QVERIFY(encode("tone one.flac", "Tone one", 5, 330));
     QVERIFY(encode("tone two.flac", "Tone two", 6, 220));
     QVERIFY(encode("01 first.flac", "First", 4));

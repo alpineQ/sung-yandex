@@ -21,7 +21,7 @@ QVariantMap PlayerAdaptor::metadata() const {
           {"xesam:title", t.value("title")},
           {"xesam:artist", QStringList{t.value("artist").toString()}},
           {"xesam:album", t.value("album")},
-          {"xesam:url", isServerSource(t.value("source"))?QString():t.value("localPath").toString().isEmpty()?"https://music.youtube.com/watch?v="+t.value("videoId").toString():QUrl::fromLocalFile(t.value("localPath").toString()).toString()}};
+          {"xesam:url", isServerSource(t.value("source"))?QString():t.value("localPath").toString().isEmpty()?"https://music.yandex.ru/track/"+t.value("videoId").toString().mid(3).section(':',0,0):QUrl::fromLocalFile(t.value("localPath").toString()).toString()}};
 }
 void PlayerAdaptor::SetPosition(const QDBusObjectPath &id, qlonglong pos) {
   if (canSeek() && pos>=0 && pos<=b->duration()*1000 && id.path() ==
@@ -45,7 +45,7 @@ void registerMpris(Backend *b) {
   new RootAdaptor(b);
   new PlayerAdaptor(b);
   auto bus = QDBusConnection::sessionBus();
-  if (bus.registerService("org.mpris.MediaPlayer2.sung"))
+  if (bus.registerService("org.mpris.MediaPlayer2.sung_yandex"))
     bus.registerObject("/org/mpris/MediaPlayer2", b,
                        QDBusConnection::ExportAdaptors);
 }

@@ -4,7 +4,7 @@
   outputs = { self, nixpkgs }: let
     pkgs = nixpkgs.legacyPackages.x86_64-linux;
     buildInputs = with pkgs.qt6; [ qtbase qtdeclarative qtmultimedia qtsvg qtwayland qtimageformats ];
-    nativeBuildInputs = with pkgs; [ cmake ninja pkg-config qt6.wrapQtAppsHook ];
+    nativeBuildInputs = with pkgs; [ cmake ninja pkg-config python3 qt6.wrapQtAppsHook ];
   in {
     packages.x86_64-linux.default = pkgs.stdenv.mkDerivation {
       pname = "sung-yandex";
@@ -19,6 +19,8 @@
       inherit buildInputs;
       nativeBuildInputs = nativeBuildInputs ++ [ pkgs.python3 pkgs.ffmpeg pkgs.dbus ];
       QT_QPA_PLATFORM_PLUGIN_PATH = "${pkgs.qt6.qtbase}/lib/qt-6/plugins";
+      QT_PLUGIN_PATH = pkgs.lib.makeSearchPath "lib/qt-6/plugins" buildInputs;
+      QML_IMPORT_PATH = pkgs.lib.makeSearchPath "lib/qt-6/qml" buildInputs;
     };
   };
 }

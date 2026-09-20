@@ -59,7 +59,7 @@ MDialog {
             RowLayout {
                 Layout.fillWidth: true
                 SungText { text: "Source"; Layout.fillWidth: true }
-                MButton { objectName: "smartSource"; text: ({any:"Any source",local:"Local files",youtube:"YouTube Music",subsonic:"Music server"})[dialog.sourceFilter]; tonal: true; onClicked: sources.popup(this,0,height) }
+                MButton { objectName: "smartSource"; text: ({any:"Any source",local:"Local files",yandex:"Yandex Music",subsonic:"Music server"})[dialog.sourceFilter]; tonal: true; onClicked: sources.popup(this,0,height) }
             }
             RowLayout {
                 Layout.fillWidth: true
@@ -70,6 +70,6 @@ MDialog {
             SungText { text: "Matches saved music. All rules apply. A year or length rule skips songs that have no year or duration."; color: Theme.muted; font.pixelSize: Theme.bodySmall; wrapMode: Text.Wrap; Layout.fillWidth: true }
         }
     }
-    MMenu { id: sources; Repeater { model: [{key:"any",title:"Any source"},{key:"local",title:"Local files"},{key:"youtube",title:"YouTube Music"},{key:"subsonic",title:"Music server"}]; MMenuItem { required property var modelData; text: modelData.title; checkable: true; checked: dialog.sourceFilter===modelData.key; onTriggered: dialog.sourceFilter=modelData.key } } }
+    MMenu { id: sources; Repeater { model: [{key:"any",title:"Any source"},{key:"local",title:"Local files"},{key:"yandex",title:"Yandex Music"},{key:"subsonic",title:"Music server"}]; MMenuItem { required property var modelData; text: modelData.title; checkable: true; checked: dialog.sourceFilter===modelData.key; onTriggered: dialog.sourceFilter=modelData.key } } }
     MMenu { id: played; Repeater { model: [0,-1,7,30,90,365]; MMenuItem { required property int modelData; text: modelData===0?"Any time":modelData===-1?"Never":"Over "+modelData+" days ago"; checkable: true; checked: dialog.daysFilter===modelData; onTriggered: dialog.daysFilter=modelData } } }
 }

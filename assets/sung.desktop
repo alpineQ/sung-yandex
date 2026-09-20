@@ -1,10 +1,10 @@
 [Desktop Entry]
 Type=Application
-Name=Sung
-Comment=YouTube Music, native on Linux
-Exec=sung %u
-Icon=sung
+Name=Sung Yandex
+Comment=Yandex Music with offline cache, native on Linux
+Exec=sung-yandex %u
+Icon=sung-yandex
 Terminal=false
 Categories=AudioVideo;Audio;Player;
-StartupWMClass=sung
-MimeType=x-scheme-handler/sung;
+StartupWMClass=sung-yandex
+MimeType=x-scheme-handler/sung-yandex;

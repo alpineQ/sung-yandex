@@ -32,6 +32,55 @@ private slots:
     QCoreApplication::setApplicationName("sung-test");
     QCoreApplication::setOrganizationName("SungTests");
   }
+  void yandexCachedPlaybackWithoutCredentials() {
+    QTemporaryDir cache;
+    const auto helper = QFileInfo(QString::fromUtf8(qgetenv("SUNG_FIXTURE_HELPER")))
+                            .dir().absoluteFilePath("../helper/catalog.py");
+    const QList<QByteArray> keys{"SUNG_HELPER", "SUNG_PYTHON", "YANDEX_MUSIC_TOKEN",
+                                "YANDEX_MUSIC_ENV_FILE", "YANDEX_MUSIC_CACHE_DIR"};
+    QMap<QByteArray, QByteArray> previous;
+    for (const auto &key : keys) previous[key] = qgetenv(key.constData());
+    const auto restore = qScopeGuard([&] {
+      for (const auto &key : keys) qputenv(key.constData(), previous[key]);
+    });
+    qputenv("SUNG_HELPER", helper.toUtf8());
+    qputenv("SUNG_PYTHON", "python3");
+    qputenv("YANDEX_MUSIC_TOKEN", "");
+    qputenv("YANDEX_MUSIC_ENV_FILE", "");
+    qputenv("YANDEX_MUSIC_CACHE_DIR", cache.path().toUtf8());
+    QProcess encoder;
+    encoder.start("ffmpeg", {"-nostdin", "-v", "error", "-f", "lavfi", "-i",
+                           "anullsrc=r=44100:cl=mono", "-t", "8", cache.filePath("42.flac")});
+    QVERIFY(encoder.waitForFinished(15000));
+    QCOMPARE(encoder.exitCode(), 0);
+    QFile metadata(cache.filePath("42.meta.json"));
+    QVERIFY(metadata.open(QIODevice::WriteOnly));
+    metadata.write(R"({"id":"42","title":"Offline Yandex","artists":["Test"],"duration_ms":8000})");
+    metadata.close();
+    {
+      Backend b;
+      b.setWatchMusicFolders(false); b.setOnlineArtwork(false);
+      b.setAutoplay(false); b.setPrepareNext(false); b.setVolume(0);
+      b.clearQueue(); b.home();
+      QTRY_VERIFY_WITH_TIMEOUT(!b.busy(), 5000);
+      QVERIFY2(b.error().isEmpty(), qPrintable(b.error()));
+      QCOMPARE(b.sections().size(), 1);
+      const auto song = b.sections().first().toMap().value("items").toList().first().toMap();
+      QCOMPARE(song.value("id").toString(), "ym:42");
+      b.playItem(song);
+      QTRY_VERIFY_WITH_TIMEOUT(b.playing(), 5000);
+      QTRY_VERIFY_WITH_TIMEOUT(b.position() > 100, 5000);
+      QVERIFY(b.m_media().source().isLocalFile());
+      QVERIFY(b.m_media().source().toLocalFile() != cache.filePath("42.flac"));
+      b.pause(); b.seek(3000);
+      QTRY_VERIFY_WITH_TIMEOUT(b.position() >= 2900, 2000);
+      b.copyLink(song);
+      QCOMPARE(QGuiApplication::clipboard()->text(), "https://music.yandex.ru/track/42");
+      b.clearQueue();
+    }
+    // Disposing the playback buffer must never remove the persistent download.
+    QVERIFY(QFileInfo::exists(cache.filePath("42.flac")));
+  }
   void sleepFadeRestoresUserVolume() {
     Backend b;b.setSleepFade(true);b.setVolume(.6);b.setSleep(15);
     QVERIFY(b.m_sleepFadeStart.isActive());QVERIFY(!b.m_sleepFadeTick.isActive());
@@ -141,7 +190,7 @@ private slots:
   }
   void productFeatures() {
     const auto oldHelper=qgetenv("SUNG_HELPER"),oldPython=qgetenv("SUNG_PYTHON");
-    qputenv("SUNG_HELPER",qgetenv("SUNG_FIXTURE_HELPER"));qputenv("SUNG_PYTHON","/usr/bin/python3");
+    qputenv("SUNG_HELPER",qgetenv("SUNG_FIXTURE_HELPER"));qputenv("SUNG_PYTHON","python3");
     const auto restore=qScopeGuard([&]{qputenv("SUNG_HELPER",oldHelper);qputenv("SUNG_PYTHON",oldPython);});
     Backend b;b.clearQueue();b.setWatchMusicFolders(false);b.m_musicFolders.clear();b.m_localTracks.clear();b.m_settings.remove("artworkChoices");
     auto one=track("polish00001");one["seconds"]=120;one["artist"]="Album artist";one["discNumber"]=1;
@@ -174,7 +223,7 @@ private slots:
   }
   void onlineArtworkLifecycle() {
     const auto oldHelper=qgetenv("SUNG_HELPER"),oldPython=qgetenv("SUNG_PYTHON"),oldBuffer=qgetenv("SUNG_BUFFER_FIXTURE");
-    qputenv("SUNG_HELPER",qgetenv("SUNG_FIXTURE_HELPER"));qputenv("SUNG_PYTHON","/usr/bin/python3");qputenv("SUNG_BUFFER_FIXTURE","1");
+    qputenv("SUNG_HELPER",qgetenv("SUNG_FIXTURE_HELPER"));qputenv("SUNG_PYTHON","python3");qputenv("SUNG_BUFFER_FIXTURE","1");
     const auto restore=qScopeGuard([&]{qputenv("SUNG_HELPER",oldHelper);qputenv("SUNG_PYTHON",oldPython);qputenv("SUNG_BUFFER_FIXTURE",oldBuffer);});
     Backend b;b.clearQueue();b.setVolume(0);b.setAutoplay(false);b.setPrepareNext(false);
     b.setMotion(true);b.setAnimatedArtwork(true);b.setOnlineArtwork(true);b.setUiActive(true);
@@ -304,7 +353,7 @@ private slots:
   void folderImportAndPlaylistCleanup() {
     const auto oldHelper=qgetenv("SUNG_HELPER"),oldPython=qgetenv("SUNG_PYTHON");
     const auto helper=QFileInfo(QString::fromUtf8(qgetenv("SUNG_FIXTURE_HELPER"))).dir().absoluteFilePath("../helper/catalog.py");
-    qputenv("SUNG_HELPER",helper.toUtf8());qputenv("SUNG_PYTHON","/usr/bin/python3");
+    qputenv("SUNG_HELPER",helper.toUtf8());qputenv("SUNG_PYTHON","python3");
     const auto restore=qScopeGuard([&]{qputenv("SUNG_HELPER",oldHelper);qputenv("SUNG_PYTHON",oldPython);});
     QTemporaryDir music;QDir().mkpath(music.filePath("Album"));
     const auto path=music.filePath("Album/One.wav");
@@ -348,7 +397,7 @@ private slots:
   void localAudioAndLyricSearch() {
     const auto oldHelper=qgetenv("SUNG_HELPER"),oldPython=qgetenv("SUNG_PYTHON");
     const auto helper=QFileInfo(QString::fromUtf8(qgetenv("SUNG_FIXTURE_HELPER"))).dir().absoluteFilePath("../helper/catalog.py");
-    qputenv("SUNG_HELPER",helper.toUtf8());qputenv("SUNG_PYTHON","/usr/bin/python3");
+    qputenv("SUNG_HELPER",helper.toUtf8());qputenv("SUNG_PYTHON","python3");
     const auto restore=qScopeGuard([&]{qputenv("SUNG_HELPER",oldHelper);qputenv("SUNG_PYTHON",oldPython);});
     QTemporaryDir music;
     for(const auto &name:{"First song.flac","Second song.mp3"}){
@@ -380,7 +429,7 @@ private slots:
   }
   void listeningFeatures() {
     const auto oldHelper=qgetenv("SUNG_HELPER"),oldPython=qgetenv("SUNG_PYTHON");
-    qputenv("SUNG_HELPER",qgetenv("SUNG_FIXTURE_HELPER"));qputenv("SUNG_PYTHON","/usr/bin/python3");qputenv("SUNG_BUFFER_FIXTURE","1");
+    qputenv("SUNG_HELPER",qgetenv("SUNG_FIXTURE_HELPER"));qputenv("SUNG_PYTHON","python3");qputenv("SUNG_BUFFER_FIXTURE","1");
     const auto restore=qScopeGuard([&]{qputenv("SUNG_HELPER",oldHelper);qputenv("SUNG_PYTHON",oldPython);qunsetenv("SUNG_BUFFER_FIXTURE");});
     auto parsed=Lrc::parse("[offset:100]\n[00:02.12][00:01.500] Test\n[00:01.500] Translation\n[00:04] End",6000);
     QCOMPARE(parsed.size(),3);QCOMPARE(parsed[0].toMap().value("start").toLongLong(),1400);QCOMPARE(parsed[0].toMap().value("text").toString(),"Test\nTranslation");QCOMPARE(parsed[1].toMap().value("start").toLongLong(),2020);

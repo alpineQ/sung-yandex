@@ -91,21 +91,21 @@ int main(int argc, char **argv) {
   if (!qEnvironmentVariableIsSet("QT_FFMPEG_ENCODING_HW_DEVICE_TYPES"))
     qputenv("QT_FFMPEG_ENCODING_HW_DEVICE_TYPES", ",");
   QGuiApplication app(argc, argv);
-  app.setApplicationName("sung");
-  app.setApplicationDisplayName("Sung");
-  app.setOrganizationName("Sung");
+  app.setApplicationName("sung-yandex");
+  app.setApplicationDisplayName("Sung Yandex");
+  app.setOrganizationName("SungYandex");
   app.setApplicationVersion("0.12.0");
-  app.setDesktopFileName("sung");
+  app.setDesktopFileName("sung-yandex");
 #ifdef SUNG_DIAGNOSTICS
   if(app.arguments().contains("--immersive-polish-test"))app.setDesktopFileName("sung-immersive-test");
 #endif
   const auto args = app.arguments();
   if (args.contains("--version")) {
-    fprintf(stdout, "Sung 0.12.0\n");
+    fprintf(stdout, "Sung Yandex 0.1.0 (Sung 0.12.0)\n");
     return 0;
   }
   QLocalSocket peer;
-  peer.connectToServer("sung-" + QString::number(getuid()));
+  peer.connectToServer("sung-yandex-" + QString::number(getuid()));
   if (!args.contains("--isolated") && peer.waitForConnected(120)) {
     peer.write(args.size() > 1 ? args.last().toUtf8() : QByteArray("raise"));
     peer.flush();
@@ -114,9 +114,9 @@ int main(int argc, char **argv) {
   }
   QLocalServer server;
   if (!args.contains("--isolated")) {
-    QLocalServer::removeServer("sung-" + QString::number(getuid()));
+    QLocalServer::removeServer("sung-yandex-" + QString::number(getuid()));
     server.setSocketOptions(QLocalServer::UserAccessOption);
-    server.listen("sung-" + QString::number(getuid()));
+    server.listen("sung-yandex-" + QString::number(getuid()));
   }
   QQuickStyle::setStyle("Basic");
   QFont font(QFontDatabase::families().contains("Google Sans Flex")
