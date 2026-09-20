@@ -50,7 +50,7 @@ private slots:
     qputenv("YANDEX_MUSIC_CACHE_DIR", cache.path().toUtf8());
     QProcess encoder;
     encoder.start("ffmpeg", {"-nostdin", "-v", "error", "-f", "lavfi", "-i",
-                           "anullsrc=r=44100:cl=mono", "-t", "8", cache.filePath("42.flac")});
+                           "anullsrc=r=44100:cl=mono", "-t", "8", "-c:a", "flac", "-strict", "-2", "-f", "mp4", cache.filePath("42.flac-mp4")});
     QVERIFY(encoder.waitForFinished(15000));
     QCOMPARE(encoder.exitCode(), 0);
     QFile metadata(cache.filePath("42.meta.json"));
@@ -71,7 +71,13 @@ private slots:
       QTRY_VERIFY_WITH_TIMEOUT(b.playing(), 5000);
       QTRY_VERIFY_WITH_TIMEOUT(b.position() > 100, 5000);
       QVERIFY(b.m_media().source().isLocalFile());
-      QVERIFY(b.m_media().source().toLocalFile() != cache.filePath("42.flac"));
+      QVERIFY(b.m_media().source().toLocalFile() != cache.filePath("42.flac-mp4"));
+      QFile lrc(cache.filePath("fixture.lrc"));
+      QVERIFY(lrc.open(QIODevice::WriteOnly));
+      lrc.write("[00:01.00] Offline lyrics\n"); lrc.close();
+      b.importLyrics(QUrl::fromLocalFile(lrc.fileName()), "ym:42");
+      QCOMPARE(b.lyricsSource(), "Imported LRC");
+      QVERIFY(b.lyrics().contains("Offline lyrics"));
       b.pause(); b.seek(3000);
       QTRY_VERIFY_WITH_TIMEOUT(b.position() >= 2900, 2000);
       b.copyLink(song);
@@ -79,7 +85,7 @@ private slots:
       b.clearQueue();
     }
     // Disposing the playback buffer must never remove the persistent download.
-    QVERIFY(QFileInfo::exists(cache.filePath("42.flac")));
+    QVERIFY(QFileInfo::exists(cache.filePath("42.flac-mp4")));
   }
   void sleepFadeRestoresUserVolume() {
     Backend b;b.setSleepFade(true);b.setVolume(.6);b.setSleep(15);
@@ -316,7 +322,7 @@ private slots:
     const auto id=b.saveSmartPlaylist({},"Example",{{"artist","EXAMPLE"}});QVERIFY(!id.isEmpty());
     b.openPlaylist(id);QCOMPARE(b.results()->count(),2);
     b.addItemsToPlaylist(id,{c});b.removePlaylistRows(id,{0});b.movePlaylistTrack(id,0,1);QCOMPARE(b.results()->count(),2);
-    b.saveSmartPlaylist(id,"Online",{{"source","youtube"},{"likedOnly",true}});QCOMPARE(b.results()->count(),1);
+    b.saveSmartPlaylist(id,"Online",{{"source","yandex"},{"likedOnly",true}});QCOMPARE(b.results()->count(),1);
     b.toggleLike(c);QCOMPARE(b.results()->count(),2);b.toggleLike(a);QCOMPARE(b.results()->count(),1);
     b.m_lastPlayed[c.value("id").toString()]=QDateTime::currentSecsSinceEpoch()-qint64(40)*86400;
     b.saveSmartPlaylist(id,"Older",{{"days",30}});QCOMPARE(b.results()->count(),1);QCOMPARE(b.results()->get(0).value("id"),c.value("id"));
@@ -328,7 +334,7 @@ private slots:
     auto details=b.trackDetails(d);QVERIFY(!details.isEmpty());
     bool missing=false;for(const auto &v:details)if(v.toMap().value("value")=="File missing")missing=true;QVERIFY(missing);
     a["streamUrl"]="https://private.invalid/?token=secret";for(const auto &v:b.trackDetails(a))QVERIFY(!v.toMap().value("value").toString().contains("secret"));
-    Entries entries;entries.assign({a,d,c});QCOMPARE(entries.data(entries.index(0),Qt::UserRole+1).toString(),QString("YouTube Music"));QCOMPARE(entries.data(entries.index(1),Qt::UserRole+1).toString(),QString("Local files"));QCOMPARE(entries.count(),3);
+    Entries entries;entries.assign({a,d,c});QCOMPARE(entries.data(entries.index(0),Qt::UserRole+1).toString(),QString("Yandex Music"));QCOMPARE(entries.data(entries.index(1),Qt::UserRole+1).toString(),QString("Local files"));QCOMPARE(entries.count(),3);
     b.m_playlists.clear();b.m_localTracks.clear();b.m_favorites.clear();b.m_lastPlayed.clear();
     const auto temporary=b.saveSmartPlaylist({},"Temporary",{});b.openPlaylist(temporary);b.undo();QCOMPARE(b.page(),QString("library"));QCOMPARE(b.libraryId(),QString("playlists"));
   }
@@ -455,7 +461,7 @@ private slots:
     QTemporaryDir files;QFile lrc(files.filePath("lyrics.lrc"));QVERIFY(lrc.open(QIODevice::WriteOnly));lrc.write("[00:01.00] First\n[00:03.00] Second");lrc.close();
     b.importLyrics(QUrl::fromLocalFile(lrc.fileName()),a.value("id").toString());QVERIFY(b.lyricsSource()!="Imported LRC");
     b.playAt(0);b.fetchLyrics();QCOMPARE(b.lyricsSource(),"Imported LRC");QCOMPARE(b.lyricLines().size(),2);QTRY_VERIFY(b.playing()&&!b.resolving());b.seek(1500);QCOMPARE(b.lyricIndex(),0);
-    b.resetLyrics();QTRY_VERIFY(!b.lyricsBusy());QCOMPARE(b.lyricsSource(),"YouTube");
+    b.resetLyrics();QTRY_VERIFY(!b.lyricsBusy());QCOMPARE(b.lyricsSource(),"Yandex Music");
     // Saved tracks deduplicate across mixes and track plays separately from list order.
     b.m_favorites={a,next,slow};b.m_playlists={QVariantMap{{"id","mix-test"},{"tracks",QVariantList{a,fail}}}};
     b.m_lastPlayed={{a.value("id").toString(),QDateTime::currentSecsSinceEpoch()-31*86400},{next.value("id").toString(),QDateTime::currentSecsSinceEpoch()}};
@@ -690,8 +696,8 @@ private slots:
     b.undo();
     b.openPlaylist(id);
     QCOMPARE(b.results()->count(),1);
-    b.copyLink(track("aaaaaaaaaaa"));
-    QCOMPARE(QGuiApplication::clipboard()->text(),"https://music.youtube.com/watch?v=aaaaaaaaaaa");
+    b.copyLink(track("ym:42"));
+    QCOMPARE(QGuiApplication::clipboard()->text(),"https://music.yandex.ru/track/42");
     b.notifyError("ConnectionError: private details", "catalog");
     QVERIFY(b.canRetry());
     QVERIFY(!b.error().contains("private details"));

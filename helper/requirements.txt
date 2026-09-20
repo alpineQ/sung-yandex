@@ -1,2 +1,1 @@
-ytmusicapi==1.12.2
-yt-dlp[default]==2026.8.19
+# Yandex adapter and local-file helpers use Python 3.11+ standard library only.

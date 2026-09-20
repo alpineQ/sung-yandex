@@ -344,7 +344,24 @@ def run(req):
         return {'lyrics':'','lines':[]}
     if op in ('home', 'search', 'album', 'playlist', 'artist', 'radio', 'lyrics', 'link', 'resolve', 'buffer'):
         from yandex import run as yandex_run
-        return yandex_run(req)
+        if op != 'lyrics':
+            return yandex_run(req)
+        failure = None
+        try:
+            result = yandex_run(req)
+        except Exception as exc:
+            failure = exc
+            result = {'lyrics': '', 'source': 'Yandex Music'}
+        if not result.get('lrc') and not result.get('lines') and req.get('fallback', True):
+            try:
+                fallback = lyric_fallback(req)
+                if fallback:
+                    return fallback
+            except Exception:
+                pass
+        if failure and not result.get('lyrics'):
+            raise failure
+        return result
     raise ValueError('Unknown request')
 
 

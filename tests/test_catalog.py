@@ -32,18 +32,19 @@ class CatalogTests(unittest.TestCase):
 
     def test_secondary_lyrics_preserve_primary_and_recover_failure(self):
         from unittest.mock import patch, MagicMock
-        api=MagicMock();api.get_watch_playlist.return_value={'lyrics':'source'}
-        api.get_lyrics.return_value={'lyrics':'Primary plain'}
-        req={'op':'lyrics','id':'abcdefghijk','fallback':True}
-        with patch.dict('sys.modules',{'ytmusicapi':MagicMock(YTMusic=MagicMock(return_value=api))}):
-            with patch.object(catalog,'lyric_fallback',side_effect=OSError('offline')):
-                self.assertEqual(catalog.run(req)['lyrics'],'Primary plain')
-            api.get_lyrics.return_value={'lyrics':[{'text':'Timed','start_time':1000}]}
-            with patch.object(catalog,'lyric_fallback') as fallback:
-                self.assertTrue(catalog.run(req)['lines']);fallback.assert_not_called()
-            api.get_watch_playlist.side_effect=OSError('primary unavailable')
-            with patch.object(catalog,'lyric_fallback',return_value={'source':'LRCLIB','lrc':'[00:01] Fallback'}):
-                self.assertEqual(catalog.run(req)['source'],'LRCLIB')
+        provider = MagicMock()
+        provider.run.return_value = {'lyrics': 'Primary plain', 'source': 'Yandex Music'}
+        req = {'op': 'lyrics', 'id': 'ym:42', 'fallback': True}
+        with patch.dict('sys.modules', {'yandex': provider}):
+            with patch.object(catalog, 'lyric_fallback', side_effect=OSError('offline')):
+                self.assertEqual(catalog.run(req)['lyrics'], 'Primary plain')
+            provider.run.return_value = {'lrc': '[00:01] Timed', 'source': 'Yandex Music'}
+            with patch.object(catalog, 'lyric_fallback') as fallback:
+                self.assertTrue(catalog.run(req)['lrc'])
+                fallback.assert_not_called()
+            provider.run.side_effect = OSError('primary unavailable')
+            with patch.object(catalog, 'lyric_fallback', return_value={'source': 'LRCLIB', 'lrc': '[00:01] Fallback'}):
+                self.assertEqual(catalog.run(req)['source'], 'LRCLIB')
 
     def test_local_metadata_embedded_art_and_missing_files(self):
         import subprocess, tempfile

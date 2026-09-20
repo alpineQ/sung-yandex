@@ -985,7 +985,7 @@ void Backend::applyLyrics(const QVariantMap &data) {
 void Backend::fetchLyrics() {
   if(current().isEmpty()||m_lyricsBusy||m_lyricsLoaded)return;
   const auto id=current().value("id").toString();
-  static const QRegularExpression valid("^(?:[A-Za-z0-9_-]{11}|(?:local_|sub_|jf_)[a-f0-9]{64})$");
+  static const QRegularExpression valid("^(?:ym:[0-9]+(?::[0-9]+)?|[A-Za-z0-9_-]{11}|(?:local_|sub_|jf_)[a-f0-9]{64})$");
   if(valid.match(id).hasMatch()) {
     QFile file(dataPath()+"/lyrics/"+id+".lrc");
     if(file.size()<=262144&&file.open(QIODevice::ReadOnly)) {
@@ -1010,7 +1010,7 @@ void Backend::fetchLyrics() {
 void Backend::reloadLyrics(){clearLyrics();fetchLyrics();}
 void Backend::setLyricsFallback(bool enabled){m_settings.setValue("lyricsFallback",enabled);emit settingsChanged();reloadLyrics();}
 void Backend::importLyrics(const QUrl &url,const QString &songId){
-  static const QRegularExpression valid("^(?:[A-Za-z0-9_-]{11}|(?:local_|sub_|jf_)[a-f0-9]{64})$");
+  static const QRegularExpression valid("^(?:ym:[0-9]+(?::[0-9]+)?|[A-Za-z0-9_-]{11}|(?:local_|sub_|jf_)[a-f0-9]{64})$");
   if(!url.isLocalFile()||!valid.match(songId).hasMatch())return;
   QFile input(url.toLocalFile());
   if(input.size()>262144||!input.open(QIODevice::ReadOnly)){notifyError("Choose an LRC file smaller than 256 KiB.");return;}
@@ -1028,7 +1028,7 @@ void Backend::importLyrics(const QUrl &url,const QString &songId){
 }
 void Backend::resetLyrics(){
   const auto id=current().value("id").toString();
-  static const QRegularExpression valid("^(?:[A-Za-z0-9_-]{11}|(?:local_|sub_|jf_)[a-f0-9]{64})$");
+  static const QRegularExpression valid("^(?:ym:[0-9]+(?::[0-9]+)?|[A-Za-z0-9_-]{11}|(?:local_|sub_|jf_)[a-f0-9]{64})$");
   if(valid.match(id).hasMatch()) {QFile f(dataPath()+"/lyrics/"+id+".lrc");if(f.exists()&&!f.remove()){notifyError("Could not remove imported lyrics.");return;}}
   reloadLyrics();
 }
