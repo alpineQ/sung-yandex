@@ -33,7 +33,7 @@ class YandexTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.env = patch.dict(os.environ, {'YANDEX_MUSIC_CACHE_DIR': str(self.root / 'cache'),
-                                         'YANDEX_MUSIC_TOKEN': '', 'YANDEX_MUSIC_ENV_FILE': ''})
+                                         'YANDEX_MUSIC_TOKEN': '', 'YANDEX_MUSIC_ENV_FILE': '', 'SUNG_YANDEX_DISABLE_KEYRING': '1'})
         self.env.start()
         self.addCleanup(self.env.stop)
         yandex.cache_dir().mkdir()

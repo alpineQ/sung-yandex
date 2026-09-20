@@ -390,16 +390,6 @@ void Backend::retry() {
   else if (target == "catalog")
     refresh();
 }
-void Backend::connectYandex(const QString &token) {
-  const auto value = token.trimmed();
-  if (value.isEmpty() || value.contains('\n') || value.contains('\r')) {
-    notifyError("Enter a valid Yandex Music OAuth token.");
-    return;
-  }
-  // Session-only credential: inherited by workers, never written to settings.
-  qputenv("YANDEX_MUSIC_TOKEN", value.toUtf8());
-  home();
-}
 void Backend::home() { browseRequest({{"op", "home"}}, m_page != "home"); }
 void Backend::search(const QString &query, const QString &filter) {
   if (query.trimmed().isEmpty())
@@ -421,6 +411,7 @@ void Backend::browseRequest(QVariantMap req, bool push) {
       req.value("title",
                 op == "home" ? "Listen" : req.value("query", "Loading…"))
           .toString();
+  const bool artistAppend = op == "artist" && req.value("page").toInt() > 0;
   const bool extend=!push && op==m_page && req.value("limit").toInt()>m_request.value("limit").toInt();
   const auto key=op=="search" ? "search:"+req.value("query").toString()+":"+req.value("filter").toString() : op+":"+req.value("id",req.value("url")).toString();
   if(push || op!=m_page) navigate(op,label,push,key);
@@ -428,7 +419,7 @@ void Backend::browseRequest(QVariantMap req, bool push) {
   m_request = req;
   m_busy = true;
   emit catalogChanged();
-  request("catalog", req, [this, op, extend](const QVariantMap &data) {
+  request("catalog", req, [this, op, extend, artistAppend](const QVariantMap &data) {
     m_busy = false;
     if (!data.value("ok").toBool()) {
       notifyError(data.value("error").toString(), "catalog");
@@ -438,8 +429,15 @@ void Backend::browseRequest(QVariantMap req, bool push) {
     const auto incoming=data.value("items").toList();
     bool prefix=extend && incoming.size()>=m_results.count();
     for(int i=0;prefix && i<m_results.count();++i) prefix=itemId(incoming[i])==itemId(m_results.rows[i]);
-    if(prefix)m_results.append(incoming.mid(m_results.count())); else m_results.assign(incoming);
+    if(artistAppend)m_results.append(incoming);
+    else if(prefix)m_results.append(incoming.mid(m_results.count())); else m_results.assign(incoming);
     m_sections = data.value("sections").toList();
+    if (data.contains("uid")) {
+      m_yandexUid = data.value("uid").toString();
+      m_yandexAccount = data.value("accountName").toString();
+      emit yandexChanged();
+    }
+    if (op == "artist") m_request["nextPage"] = data.value("nextPage");
     if (data.contains("title"))
       m_title = data.value("title").toString();
     m_cover = data.value("art").toString();
@@ -448,6 +446,7 @@ void Backend::browseRequest(QVariantMap req, bool push) {
     m_more = (op == "search" && m_results.count() >= limit && limit < 200) ||
              (op == "playlist" &&
               data.value("total").toInt() > m_results.count() && limit < 5000);
+    if (op == "artist") m_more = data.value("hasMore").toBool();
     emit catalogChanged();
   });
 }
@@ -456,6 +455,7 @@ void Backend::more() {
   if (!m_more || m_busy)
     return;
   auto req = m_request;
+  if (m_page == "artist") { req["page"] = req.value("nextPage"); browseRequest(req, false); return; }
   req["limit"] =
       req.value("limit", 30).toInt() + (m_page == "search" ? 30 : 100);
   browseRequest(req, false);
@@ -464,7 +464,7 @@ void Backend::refresh() {
   if(m_page=="local-album" || m_page=="local-artist"){updateLocalView();return;}
   if(m_page=="server"){auto req=m_request;req["offset"]=0;serverBrowseRequest(req,false);return;}
   if (!m_request.isEmpty())
-    browseRequest(m_request, false);
+    { auto req = m_request; req.remove("page"); req.remove("nextPage"); browseRequest(req, false); }
   else if (m_page == "library")
     library(m_libraryId);
 }

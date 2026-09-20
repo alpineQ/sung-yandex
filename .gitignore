@@ -72,3 +72,5 @@ settings.json
 !/flake.nix
 !/flake.lock
 !/licenses/Sung-MIT.txt
+
+!/helper/yandex*.py

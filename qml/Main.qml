@@ -1987,19 +1987,23 @@ ApplicationWindow {
                     ColumnLayout {id:options3;objectName:"settingsRows3";Layout.fillWidth:true;Layout.minimumWidth:0;spacing:12
                 MSettingRow {opens:true;objectName:"musicServerButton";text:"Music server";visible:settingsDialog.matches("Music server library");onClicked:{settingsDialog.close();serverConnection.open()}}
                 SungText { text: "Yandex Music"; font.pixelSize: Theme.labelLarge; color: Theme.muted }
+                SungText { text: app.yandexConnected ? "Connected as " + app.yandexAccount : "Not connected"; color: Theme.muted }
+                MSwitch { id: rememberYandex; text: "Remember in system keyring"; checked: true; Layout.fillWidth: true }
                 MTextField {
                     id: yandexToken; objectName: "yandexToken"
                     Layout.fillWidth: true; Layout.minimumWidth: 0
                     label: "OAuth token"; echoMode: TextInput.Password
-                    onAccepted: { app.connectYandex(text); clear(); }
+                    onAccepted: { app.connectYandex(text, rememberYandex.checked); clear(); }
                 }
                 MButton {
                     objectName: "connectYandexButton"; text: "Connect Yandex Music"; tonal: true
-                    enabled: yandexToken.text.trim().length > 0
-                    onClicked: { app.connectYandex(yandexToken.text); yandexToken.clear(); }
+                    enabled: yandexToken.text.trim().length > 0 && !app.yandexBusy
+                    busy: app.yandexBusy
+                    onClicked: { app.connectYandex(yandexToken.text, rememberYandex.checked); yandexToken.clear(); }
                 }
+                MButton { text: "Disconnect and forget saved token"; visible: app.yandexConnected; enabled: !app.yandexBusy; onClicked: app.disconnectYandex() }
                 SungText {
-                    text: "The token stays in memory for this session. You can also launch with YANDEX_MUSIC_TOKEN. Played songs are downloaded automatically; Home → Downloaded works offline. Hearts and custom playlists are stored on this device."
+                    text: "Tokens are saved in the system keyring when Remember is enabled. Environment tokens and yamusic keyring credentials also work. Played songs are downloaded automatically; Home → Downloaded works offline. Hearts and custom playlists are stored on this device."
                     wrapMode: Text.Wrap; Layout.fillWidth: true; Layout.minimumWidth: 0
                     color: Theme.muted; font.pixelSize: Theme.bodyMedium
                 }

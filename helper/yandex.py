@@ -24,6 +24,8 @@ MAX_AUDIO = 512 * 1024 * 1024
 
 
 def token():
+    if os.environ.get('SUNG_YANDEX_LOGGED_OUT') == '1':
+        return ''
     value = os.environ.get('YANDEX_MUSIC_TOKEN', '').strip()
     if value:
         return value
@@ -34,7 +36,8 @@ def token():
             key, sep, value = line.strip().removeprefix('export ').partition('=')
             if sep and key.strip() == 'YANDEX_MUSIC_TOKEN':
                 return value.strip().strip('\"\'')
-    return ''
+    from yandex_credentials import load
+    return load()
 
 
 def cache_dir():
@@ -118,16 +121,18 @@ def cached_tracks():
 
 
 class Api:
-    def __init__(self):
-        self.token = token()
+    def __init__(self, oauth_token=None):
+        self.token = token() if oauth_token is None else oauth_token
         if not self.token:
             raise ValueError('Set your Yandex Music OAuth token in Settings → Connections, or YANDEX_MUSIC_TOKEN. Downloaded songs work offline.')
 
-    def get(self, path, params=None, data=None):
+    def get(self, path, params=None, data=None, json_data=None):
         url = 'https://api.music.yandex.net/' + path
         if params:
             url += '?' + urlencode(params)
-        request = Request(url, data=urlencode(data).encode() if data is not None else None, headers={
+        body = json.dumps(json_data).encode() if json_data is not None else urlencode(data, doseq=True).encode() if data is not None else None
+        request = Request(url, data=body, headers={
+            'Content-Type': 'application/json' if json_data is not None else 'application/x-www-form-urlencoded',
             'Authorization': 'OAuth ' + self.token,
             'X-Yandex-Music-Client': 'YandexMusicAndroid/24023621',
             'Origin': 'music-application://desktop', 'Accept-Language': 'ru',
@@ -137,6 +142,8 @@ class Api:
             with urlopen(request, timeout=15) as response:
                 result = json.load(response)
         except HTTPError as exc:
+            if exc.code == 409:
+                raise ValueError('This playlist changed on another device. Refresh it before editing again.') from None
             if exc.code in (401, 403):
                 raise ValueError('Yandex Music denied access. Check your OAuth token and subscription.') from None
             raise ValueError(f'Yandex Music HTTP error {exc.code}. Try again.') from None
@@ -241,6 +248,13 @@ def collection(api, identity):
 
 def run(req):
     op = req.get('op')
+    if op == 'account-connect':
+        from yandex_credentials import connect
+        return connect(req)
+    if op == 'account-forget':
+        from yandex_credentials import secret_tool
+        secret_tool('clear')
+        return {}
     if op in ('buffer', 'resolve'):
         return buffer(req)
     if op == 'home':
@@ -248,14 +262,18 @@ def run(req):
         sections = [{'title': 'Downloaded · Offline', 'items': offline}] if offline else []
         try:
             api = Api()
-            uid = api.get('account/status')['account']['uid']
+            account = api.get('account/status')['account']
+            uid = account['uid']
             playlists = api.get(f'users/{uid}/playlists/list')
             sections.append({'title': 'Yandex Music', 'items': [dict(id=f'ym:{uid}:3', browseId=f'ym:{uid}:3', kind='playlist', title='Мне нравится', source='yandex')]})
             sections.append({'title': 'Мои плейлисты', 'items': [normalize(p, 'playlist') for p in playlists]})
         except (ValueError, OSError):
             if not offline:
                 raise
-        return {'sections': sections}
+        result = {'sections': sections}
+        if 'account' in locals():
+            result.update(uid=str(uid), accountName=account.get('displayName') or account.get('login', ''))
+        return result
     api = Api()
     identity = str(req.get('id', '')).removeprefix('ym:')
     if op == 'search':
@@ -274,9 +292,16 @@ def run(req):
                     artist=', '.join(a.get('name', '') for a in data.get('artists', [])),
                     items=[normalize(t) for volume in data.get('volumes', []) for t in volume])
     if op == 'artist':
-        data = api.get(f'artists/{numeric_id(identity)}/tracks', {'page-size': 100})
-        info = api.get(f'artists/{identity}/brief-info')['artist']
-        return dict(title=info.get('name', ''), art=cover(info), sections=[{'title': 'Tracks', 'items': [normalize(t) for t in data.get('tracks', [])]}])
+        page = max(0, int(req.get('page', 0)))
+        data = api.get(f'artists/{numeric_id(identity)}/tracks', {'page-size': 100, 'page': page})
+        info = api.get(f'artists/{identity}/brief-info')['artist'] if page == 0 else {}
+        tracks = [normalize(t) for t in data.get('tracks', [])]
+        pager = data.get('pager') or {}
+        total = int(pager.get('total', (page + 1) * 100 + (1 if len(tracks) == 100 else 0)))
+        result = dict(items=tracks, nextPage=page + 1, hasMore=(page * 100 + len(tracks)) < total, total=total)
+        if page == 0:
+            result.update(title=info.get('name', ''), art=cover(info))
+        return result
     if op == 'radio':
         data = api.get(f'tracks/{track_id(identity)}/similar')
         return {'items': [normalize(t) for t in data.get('similarTracks', [])]}

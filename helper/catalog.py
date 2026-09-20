@@ -342,7 +342,7 @@ def run(req):
             try: return lyric_fallback(req) or {'lyrics':'','lines':[]}
             except Exception: pass
         return {'lyrics':'','lines':[]}
-    if op in ('home', 'search', 'album', 'playlist', 'artist', 'radio', 'lyrics', 'link', 'resolve', 'buffer'):
+    if op.startswith(('account-', 'yandex-', 'wave-')) or op in ('home', 'search', 'album', 'playlist', 'artist', 'radio', 'lyrics', 'link', 'resolve', 'buffer'):
         from yandex import run as yandex_run
         if op != 'lyrics':
             return yandex_run(req)

@@ -78,6 +78,9 @@ signals:
 
 class Backend : public QObject {
   Q_OBJECT
+  Q_PROPERTY(bool yandexConnected READ yandexConnected NOTIFY yandexChanged)
+  Q_PROPERTY(bool yandexBusy READ yandexBusy NOTIFY yandexChanged)
+  Q_PROPERTY(QString yandexAccount READ yandexAccount NOTIFY yandexChanged)
   Q_PROPERTY(MusicServer *server READ server CONSTANT)
   Q_PROPERTY(bool serverPlaylistEditable READ serverPlaylistEditable NOTIFY catalogChanged)
   Q_PROPERTY(QVariantMap serverRequest READ serverRequest NOTIFY catalogChanged)
@@ -492,7 +495,11 @@ public:
   Q_INVOKABLE void removeQueueRows(const QVariantList &indices);
   Q_INVOKABLE void moveQueueRows(const QVariantList &indices,int before);
   Q_INVOKABLE void home();
-  Q_INVOKABLE void connectYandex(const QString &token);
+  Q_INVOKABLE void connectYandex(const QString &token, bool remember = true);
+  Q_INVOKABLE void disconnectYandex();
+  bool yandexConnected() const { return !m_yandexUid.isEmpty(); }
+  bool yandexBusy() const { return m_yandexBusy; }
+  QString yandexAccount() const { return m_yandexAccount; }
   Q_INVOKABLE void search(const QString &query,
                           const QString &filter = "songs");
   Q_INVOKABLE void open(const QVariantMap &item);
@@ -579,6 +586,7 @@ signals:
   void presentationChanged();
   void qualityChanged();
   void artworkFitChanged();
+  void yandexChanged();
   void artworkCacheCleared();
   void seeked(qint64 position);
   void toast(const QString &message);
@@ -661,6 +669,8 @@ private:
   QVariantMap snapshot() const;
   void restore(const QVariantMap &);
   static QVariantList playable(const QVariantList &);
+  QString m_yandexUid, m_yandexAccount;
+  bool m_yandexBusy = false;
   QSettings m_settings;
   PlaybackNotifier m_notifier;
   bool m_historyPaused = false;
