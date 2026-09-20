@@ -67,3 +67,8 @@ settings.json
 *.[mM][dD]
 *.[mM][aA][rR][kK][dD][oO][wW][nN]
 !/README.md
+
+!/helper/yandex.py
+!/flake.nix
+!/flake.lock
+!/licenses/Sung-MIT.txt
