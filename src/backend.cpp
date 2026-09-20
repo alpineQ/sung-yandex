@@ -114,6 +114,10 @@ Backend::Backend(QObject *parent) : QObject(parent) {
     if(buffer.isValid() && (m_decodeRate!=buffer.format().sampleRate() || m_decodeChannels!=buffer.format().channelCount())){m_decodeRate=buffer.format().sampleRate();m_decodeChannels=buffer.format().channelCount();emit qualityChanged();}
     // Levelling measures every recording, including while the meters are idle.
     if(buffer.isValid() && playing())m_loudness.process(buffer);
+    if (buffer.isValid() && playing() && !m_waveSession.isEmpty() && current().value("_waveSession").toString() == m_waveSession) {
+      if (m_waveStartedToken != m_trackToken) { m_waveStartedToken = m_trackToken; waveEvent("trackStarted"); }
+      m_wavePlayedMs += buffer.duration() / 1000;
+    }
     if(!m_uiActive || !motion() || !playing())return;
     if(!buffer.isValid()){resetAudioLevels();return;}
     m_levelAnalyzer.process(buffer);
@@ -204,8 +208,10 @@ Backend::Backend(QObject *parent) : QObject(parent) {
   connect(this,&Backend::libraryChanged,this,[this]{if(m_page=="local" && !smartPlaylist(m_libraryId).isEmpty()){for(const auto &p:m_playlists)if(p.toMap().value("id")==m_libraryId){const auto rows=playlistRows(p.toMap());if(rows!=m_results.rows)m_results.assign(rows);}}if(m_page=="library"&&(m_libraryId.startsWith("mix-")||m_libraryId=="files")){const auto rows=libraryRows(m_libraryId);if(rows!=m_results.rows)m_results.assign(rows);}});
   connect(this,&Backend::catalogChanged,this,&Backend::presentationChanged);
   load();
+  if (m_settings.value("yandexDisconnected", false).toBool()) qputenv("SUNG_YANDEX_LOGGED_OUT", "1");
   setupServer();
   setupFolderWatching();
+  if (!qEnvironmentVariableIsSet("SUNG_FIXTURE_HELPER")) QTimer::singleShot(0, this, &Backend::initializeYandex);
 }
 Backend::~Backend() {
   m_portMonitor.kill();m_portProbe.kill();m_portMonitor.waitForFinished(500);m_portProbe.waitForFinished(500);
@@ -254,7 +260,7 @@ void Backend::request(const QString &channel, QVariantMap args, Callback done, s
   }
   auto timer = new QTimer(p);
   timer->setSingleShot(true);
-  timer->setInterval((channel == "play" || channel == "prepare") ? 75000 : 45000);
+  timer->setInterval(channel == "yandex-download" ? 15 * 60 * 1000 : (channel == "play" || channel == "prepare") ? 75000 : 45000);
   connect(timer, &QTimer::timeout, this, [this, channel, done] {
     cancel(channel);
     done({{"ok", false}, {"error", "Connection timed out. Try again."}});
@@ -436,11 +442,12 @@ void Backend::browseRequest(QVariantMap req, bool push) {
       m_yandexUid = data.value("uid").toString();
       m_yandexAccount = data.value("accountName").toString();
       emit yandexChanged();
+      syncYandexLibrary();
     }
     if (op == "artist") m_request["nextPage"] = data.value("nextPage");
     if (data.contains("title"))
       m_title = data.value("title").toString();
-    m_cover = data.value("art").toString();
+    if (!artistAppend || data.contains("art")) m_cover = data.value("art").toString();
     if(op=="album"){m_request["artist"]=data.value("artist");m_request["year"]=data.value("year");}
     const auto limit = m_request.value("limit", 30).toInt();
     m_more = (op == "search" && m_results.count() >= limit && limit < 200) ||
@@ -461,6 +468,8 @@ void Backend::more() {
   browseRequest(req, false);
 }
 void Backend::refresh() {
+  if (m_page == "local" && m_libraryId.startsWith("ym:")) { openYandexPlaylist(m_libraryId); return; }
+  if (m_page == "library" && (m_libraryId == "favorites" || m_libraryId == "playlists")) syncYandexLibrary();
   if(m_page=="local-album" || m_page=="local-artist"){updateLocalView();return;}
   if(m_page=="server"){auto req=m_request;req["offset"]=0;serverBrowseRequest(req,false);return;}
   if (!m_request.isEmpty())
@@ -496,6 +505,11 @@ void Backend::open(const QVariantMap &item) {
     if(item.value("kind")=="song"){playItem(item);return;}
     if(!m_server.owns(item)){notifyError("Connect to this item’s server in Settings.");return;}
     serverBrowseRequest({{"mode",item.value("kind")},{"remoteId",item.value("remoteId")},{"genre",item.value("title")},{"title",item.value("title")},{"art",item.value("art")},{"editable",item.value("editable")}});return;
+  }
+  if (item.value("kind") == "playlist" && !m_yandexUid.isEmpty()
+      && item.value("id").toString().startsWith("ym:" + m_yandexUid + ":")
+      && item.value("id").toString() != "ym:" + m_yandexUid + ":3") {
+    openYandexPlaylist(item.value("id").toString()); return;
   }
   auto kind = item.value("kind").toString();
   if(kind=="smart"){library(item.value("id").toString());return;}
@@ -552,7 +566,7 @@ void Backend::playResults(int index) {
       actual = i;
       break;
     }
-  m_queue.reconcile(queueWithOrigin(items,"collection"));
+  stopYandexWave(); m_queue.reconcile(queueWithOrigin(items,"collection"));
   playAt(actual);
 }
 void Backend::cancelCoverPlay() {
@@ -574,7 +588,7 @@ void Backend::playCover(const QVariantMap &item) {
     if(!error.isEmpty()){notifyError(error);return;}
     const auto songs=playable(rows);
     if(songs.isEmpty()){emit toast("No playable songs in this collection");return;}
-    invalidateUndo("queue");m_queue.reconcile(queueWithOrigin(songs,"collection"));playAt(0);
+    invalidateUndo("queue");stopYandexWave(); m_queue.reconcile(queueWithOrigin(songs,"collection"));playAt(0);
   };
   if(kind=="local-album" || kind=="local-artist"){finish(localGroupRows(item),{});return;}
   if(kind=="local"){
@@ -591,13 +605,16 @@ void Backend::playItem(const QVariantMap &item) {
   if (playable({item}).isEmpty())
     return;
   invalidateUndo("queue");
-  m_queue.reconcile(queueWithOrigin({item},"manual"));
+  stopYandexWave(); m_queue.reconcile(queueWithOrigin({item},"manual"));
   playAt(0);
 }
 void Backend::playAt(int index, int direction) {
   cancelCoverPlay();
   if (index < 0 || index >= m_queue.count())
     return;
+  waveOutcome(m_media().mediaStatus() == QMediaPlayer::EndOfMedia);
+  if (!m_waveSession.isEmpty() && m_queue.get(index).value("_waveSession").toString() != m_waveSession) stopYandexWave();
+  m_wavePlayedMs = 0;
   // Steering by hand cancels any handover already under way.
   endCrossfade(false);
   clearSpare();
@@ -623,6 +640,7 @@ void Backend::playAt(int index, int direction) {
   emit trackChanged();
   emit libraryChanged();
   resolveCurrent();
+  if (!m_waveSession.isEmpty() && m_queue.count() - m_index <= 3) extendYandexWave();
   m_saveTimer.start();
 }
 void Backend::restorePlaybackPosition() {
@@ -705,6 +723,7 @@ void Backend::resolveCurrent(bool retry) {
       emit playbackChanged();
       return;
     }
+    if (id.startsWith("ym:") && yandexCacheMode() == "auto") queueYandexDownload(id);
     if(m_media().source()==url)m_media().setSource({});
     m_media().setSource(url);
     if (m_wantPlay)
@@ -728,7 +747,7 @@ void Backend::resolveCurrent(bool retry) {
   if(!retry && m_media().source().isEmpty() && m_savedPosition>0)m_restorePosition=m_savedPosition;
   m_audioCache=audioDirectory();
   if(!m_audioCache||!m_audioCache->isValid()){m_resolving=false;m_wantPlay=false;notifyError("Could not create the audio buffer.");emit playbackChanged();return;}
-  request("play", {{"op", "buffer"}, {"id", id}, {"cookies", cookies()},
+  request("play", {{"op", id.startsWith("ym:") ? "resolve" : "buffer"}, {"id", id}, {"cookies", cookies()},
                     {"fallback",m_recoveryAttempts>0},{"directory",m_audioCache->path()}},
           apply,m_audioCache);
 }
@@ -791,6 +810,7 @@ void Backend::removeQueue(int i) {
   emit toast(m_undoMessage);
 }
 void Backend::clearQueue() {
+  stopYandexWave();
   if(m_queue.count()==0)return;
   if (m_queue.count() > 0) {
     m_undoType = "queue";
@@ -826,6 +846,10 @@ void Backend::smartShuffleQueue() {
   setShuffle(false);m_queue.reconcile(ordered);m_saveTimer.start();emit libraryChanged();emit toast(m_undoMessage);
 }
 void Backend::next() {
+  if (!m_waveSession.isEmpty() && m_index + 1 >= m_queue.count()) {
+    waveOutcome(m_media().mediaStatus() == QMediaPlayer::EndOfMedia);
+    extendYandexWave(true); return;
+  }
   if (m_queue.count() == 0)
     return;
   if (shuffle() && m_queue.count() > 1) {
@@ -843,6 +867,7 @@ void Backend::next() {
     playAt(0,1);
     return;
   }
+  if (autoplay() && current().value("id").toString().startsWith("ym:")) { startYandexWave("track:" + current().value("id").toString().mid(3)); return; }
   if (autoplay() && !current().value("videoId").toString().isEmpty()) {
     m_resolving = true;
     emit playbackChanged();
@@ -954,6 +979,7 @@ void Backend::seek(qint64 p) {
   emit seeked(target);
 }
 void Backend::radio(const QVariantMap &item) {
+  if (item.value("id").toString().startsWith("ym:")) { startYandexWave("track:" + item.value("id").toString().mid(3)); return; }
   auto id = item.value("videoId").toString();
   if (id.isEmpty())
     return;
@@ -1407,6 +1433,10 @@ bool Backend::liked() const {
   return isLiked(current().value("id").toString());
 }
 void Backend::toggleLike(const QVariantMap &item) {
+  if (item.value("id").toString().startsWith("ym:")) {
+    mutateYandex({{"op", "yandex-like"}, {"id", item.value("id")}, {"liked", !isLiked(item.value("id").toString())}, {"item", item}});
+    return;
+  }
   if(isServerSource(item.value("source"))){
     m_server.star(item,!m_server.isStarred(item.value("id").toString()),[this](const QVariantMap &,const QString &error){if(!error.isEmpty())notifyError(error);else if(m_page=="server"&&m_request.value("mode")=="favorites")refresh();});return;
   }
@@ -1432,7 +1462,7 @@ QVariantList Backend::playlists() const {
   for (const auto &v : m_playlists) {
     auto p = v.toMap();
     p["smart"] = p.contains("rules");
-    p["count"] = p.contains("rules") ? -1 : p.value("tracks").toList().size();
+    p["count"] = p.contains("rules") ? -1 : p.value("remote").toBool() && !p.value("loaded").toBool() ? p.value("count").toInt() : p.value("tracks").toList().size();
     QStringList artwork;QSet<QString> seenArt;int inspected=0;
     for(const auto &t:p.value("tracks").toList()){if(++inspected>64)break;const auto url=t.toMap().value("art").toString();if(!url.isEmpty() && !seenArt.contains(url)){artwork.append(url);seenArt.insert(url);}if(artwork.size()==4)break;}
     if(!p.value("customCover").toString().isEmpty())artwork={p.value("customCover").toString()};
@@ -1483,6 +1513,7 @@ QString Backend::createPlaylist(const QString &name) {
   return id;
 }
 void Backend::openPlaylist(const QString &id) {
+  if (id.startsWith("ym:")) { openYandexPlaylist(id); return; }
   for (const auto &v : m_playlists) {
     auto p = v.toMap();
     if (p.value("id") == id) {
@@ -1496,6 +1527,7 @@ void Backend::openPlaylist(const QString &id) {
   }
 }
 void Backend::renamePlaylist(const QString &id, const QString &name) {
+  if (id.startsWith("ym:")) { mutateYandex({{"op", "yandex-playlist-rename"}, {"id", id}, {"title", name}}); return; }
   invalidateUndo("playlists");
   if (name.trimmed().isEmpty())
     return;
@@ -1515,6 +1547,7 @@ void Backend::renamePlaylist(const QString &id, const QString &name) {
   }
 }
 void Backend::deletePlaylist(const QString &id) {
+  if (id.startsWith("ym:")) { mutateYandex({{"op", "yandex-playlist-delete"}, {"id", id}}); return; }
   for (int i = 0; i < m_playlists.size(); ++i)
     if (m_playlists[i].toMap().value("id") == id) {
       m_undoType = "playlists";
@@ -1534,6 +1567,7 @@ void Backend::addToPlaylist(const QString &id, const QVariantMap &item) {
   addItemsToPlaylist(id,{item});
 }
 void Backend::removeFromPlaylist(const QString &id, int index) {
+  if (id.startsWith("ym:")) { removePlaylistRows(id, {index}); return; }
   if(!smartPlaylist(id).isEmpty())return;
   for (int i = 0; i < m_playlists.size(); ++i) {
     auto p = m_playlists[i].toMap();
@@ -1570,7 +1604,10 @@ void Backend::undo() {
     if (m_page == "library" && m_libraryId == "history")
       m_results.assign(m_history);
   } else if (m_undoType == "playlists") {
-    m_playlists = m_undoRows;
+    QVariantList restored;
+    for (const auto &v : m_undoRows) if (!v.toMap().value("remote").toBool()) restored.append(v);
+    for (const auto &v : m_playlists) if (v.toMap().value("remote").toBool()) restored.append(v);
+    m_playlists = restored;
     if (m_page=="local") {
       bool found=false;
       for(const auto &v:m_playlists)if(v.toMap().value("id")==m_libraryId){found=true;m_title=v.toMap().value("title").toString();m_cover=v.toMap().value("customCover").toString();m_results.assign(playlistRows(v.toMap()));}
@@ -1601,6 +1638,14 @@ void Backend::saveQueue(const QString &name) {
   emit toast("Queue saved as playlist");
 }
 void Backend::movePlaylistTrack(const QString &id,int from,int to) {
+  if (id.startsWith("ym:")) {
+    for (const auto &v : m_playlists) { const auto p = v.toMap(); if (p.value("id") != id) continue;
+      auto rows = p.value("tracks").toList();
+      if (from < 0 || to < 0 || from >= rows.size() || to >= rows.size() || from == to) return;
+      rows.move(from, to); editYandexPlaylist(id, rows); return;
+    }
+    return;
+  }
   if(!smartPlaylist(id).isEmpty())return;
   for(int i=0;i<m_playlists.size();++i){auto p=m_playlists[i].toMap();if(p.value("id")!=id)continue;
     auto rows=p.value("tracks").toList();if(from<0||to<0||from>=rows.size()||to>=rows.size()||from==to)return;
@@ -1646,7 +1691,7 @@ void Backend::playLink(const QString &url) {
   request("linkplay",{{"op","link"},{"url",url}},[this](const QVariantMap &data){
     if(!data.value("ok").toBool()){notifyError(data.value("error").toString());return;}
     auto items=playable(data.value("items").toList());if(items.isEmpty())return;
-    invalidateUndo("queue");m_queue.reconcile(queueWithOrigin(items,"collection"));playAt(0);
+    invalidateUndo("queue");stopYandexWave(); m_queue.reconcile(queueWithOrigin(items,"collection"));playAt(0);
   });
 }
 
@@ -1723,7 +1768,7 @@ void Backend::playCollection(int index) {
   const auto all=m_collection.items();const auto target=m_collection.get(index);
   if(playable({target}).isEmpty())return;
   int actual=0;for(int i=0;i<index;++i)if(!playable({all[i]}).isEmpty())++actual;
-  invalidateUndo("queue");m_queue.reconcile(queueWithOrigin(playable(all),"collection"));playAt(actual);
+  invalidateUndo("queue");stopYandexWave(); m_queue.reconcile(queueWithOrigin(playable(all),"collection"));playAt(actual);
 }
 void Backend::enqueueCollection() {
   auto items=playable(m_collection.items());if(items.isEmpty())return;
@@ -1922,6 +1967,7 @@ QVariantMap Backend::playlistAdditionInfo(const QString &id,const QVariantList &
   return {};
 }
 void Backend::addItemsToPlaylist(const QString &id,const QVariantList &items) {
+  if (id.startsWith("ym:")) { mutateYandex({{"op", "yandex-playlist-add"}, {"id", id}, {"items", items}}); return; }
   if(!smartPlaylist(id).isEmpty())return;
   const auto songs=playable(items);if(songs.isEmpty())return;
   for(int i=0;i<m_playlists.size();++i){auto p=m_playlists[i].toMap();if(p.value("id")!=id)continue;
@@ -1936,6 +1982,15 @@ void Backend::addItemsToPlaylist(const QString &id,const QVariantList &items) {
   }
 }
 void Backend::removePlaylistRows(const QString &id,const QVariantList &indices) {
+  if (id.startsWith("ym:")) {
+    for (const auto &v : m_playlists) { const auto p = v.toMap(); if (p.value("id") != id) continue;
+      auto rows = p.value("tracks").toList(); const auto selected = validRows(indices, rows.size());
+      if (selected.isEmpty()) return;
+      for (auto it = selected.crbegin(); it != selected.crend(); ++it) rows.removeAt(*it);
+      editYandexPlaylist(id, rows); return;
+    }
+    return;
+  }
   if(!smartPlaylist(id).isEmpty())return;
   for(int i=0;i<m_playlists.size();++i){auto p=m_playlists[i].toMap();if(p.value("id")!=id)continue;
     auto rows=p.value("tracks").toList();const auto selected=validRows(indices,rows.size());if(selected.isEmpty())return;
@@ -1952,6 +2007,7 @@ void Backend::movePlaylistRows(const QString &id,const QVariantList &indices,int
   for(int i=0;i<m_playlists.size();++i){auto p=m_playlists[i].toMap();if(p.value("id")!=id)continue;
     auto rows=p.value("tracks").toList();const auto selected=validRows(indices,rows.size());if(selected.isEmpty()||before<0||before>rows.size())return;
     const auto order=movedOrder(rows.size(),selected,before);QVariantList moved;bool changed=false;for(int n=0;n<order.size();++n){moved.append(rows[order[n]]);changed|=order[n]!=n;}if(!changed)return;
+    if (id.startsWith("ym:")) { editYandexPlaylist(id, moved); return; }
     snapshotPlaylist(id);m_undoType="playlists";m_undoRows=m_playlists;m_undoMessage="Playlist reordered";
     p["tracks"]=moved;m_playlists[i]=p;m_results.assign(moved);emit libraryChanged();m_saveTimer.start();emit toast(m_undoMessage);return;
   }
@@ -1983,6 +2039,7 @@ void Backend::updatePreparation(){
     if(next>=0&&next!=m_index)nextId=m_queue.get(next).value("videoId").toString();
     if(m_sleepTimer.isActive()&&m_sleepTimer.remainingTime()<qMax<qint64>(0,duration()-position())/playbackRate())nextId.clear();
   }
+  if(nextId.startsWith("ym:") && yandexCacheMode() != "auto") { cancelPreparation(); return; }
   if(nextId.isEmpty()){cancelPreparation();m_preparationAttempt.clear();return;}
   if(m_preparedId!=nextId){cancelPreparation();m_preparationAttempt.clear();m_preparedId=nextId;}
   if(!m_preparedData.isEmpty()||m_processes.contains("prepare")||m_preparationAttempt==nextId)return;
@@ -2430,7 +2487,7 @@ void Backend::playGroup(const QString &key,bool folders) {
     if(group==key)songs.append(t);
   }
   songs=playable(songs);if(songs.isEmpty())return;
-  invalidateUndo("queue");m_queue.reconcile(queueWithOrigin(songs,"collection"));playAt(0);
+  invalidateUndo("queue");stopYandexWave(); m_queue.reconcile(queueWithOrigin(songs,"collection"));playAt(0);
 }
 
 // --- Crossfade and gapless handover -----------------------------------------
@@ -2579,6 +2636,7 @@ void Backend::endCrossfade(bool completed) {
 // the rest of the application is looking at, and move the queue with it.
 void Backend::adoptHandoff(int index) {
   if(index<0 || index>=m_queue.count()){clearSpare();return;}
+  waveOutcome(true); m_wavePlayedMs = 0;
   // The song that just finished has nothing to return to.
   clearResumePosition(current().value("id").toString());
   const bool wasPrepared=m_handoffPrepared;
@@ -2600,6 +2658,7 @@ void Backend::adoptHandoff(int index) {
   m_savedPosition=0;
   m_playbackDirection=1;
   m_index=index;
+  if (!m_waveSession.isEmpty() && m_queue.count() - m_index <= 3) extendYandexWave();
   // A prepared stream lives in a temporary directory the player now depends on.
   if(wasPrepared){
     if(m_preparedDirectory)m_audioCache=std::move(m_preparedDirectory);

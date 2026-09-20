@@ -33,7 +33,7 @@ public:
   QVariant data(const QModelIndex &i, int role) const override {
     if (!i.isValid() || i.row()<0 || i.row()>=rows.size()) return {};
     if(role==Qt::UserRole) return rows[i.row()];
-    if(role==Qt::UserRole+4){const auto origin=rows[i.row()].toMap().value("_queueOrigin").toString();if(origin=="manual")return "Added by you";if(origin=="autoplay")return "Autoplay";if(origin=="collection")return "Collection";return data(i,Qt::UserRole+1);}
+    if(role==Qt::UserRole+4){const auto origin=rows[i.row()].toMap().value("_queueOrigin").toString();if(origin=="manual")return "Added by you";if(origin=="wave")return "My Wave";if(origin=="autoplay")return "Autoplay";if(origin=="collection")return "Collection";return data(i,Qt::UserRole+1);}
     if(role==Qt::UserRole+3)return QString("Disc %1").arg(qMax(1,rows[i.row()].toMap().value("discNumber",1).toInt()));
     if(role==Qt::UserRole+2) return CollectionView::folder(rows[i.row()].toMap());
     if(role==Qt::UserRole+1) {
@@ -78,6 +78,11 @@ signals:
 
 class Backend : public QObject {
   Q_OBJECT
+  Q_PROPERTY(bool yandexWaveActive READ yandexWaveActive NOTIFY yandexChanged)
+  Q_PROPERTY(bool yandexWaveBusy READ yandexWaveBusy NOTIFY yandexChanged)
+  Q_PROPERTY(int yandexCacheLimitMb READ yandexCacheLimitMb WRITE setYandexCacheLimitMb NOTIFY yandexChanged)
+  Q_PROPERTY(QString yandexCacheMode READ yandexCacheMode WRITE setYandexCacheMode NOTIFY yandexChanged)
+  Q_PROPERTY(QString yandexDownloadStatus READ yandexDownloadStatus NOTIFY yandexChanged)
   Q_PROPERTY(bool yandexConnected READ yandexConnected NOTIFY yandexChanged)
   Q_PROPERTY(bool yandexBusy READ yandexBusy NOTIFY yandexChanged)
   Q_PROPERTY(QString yandexAccount READ yandexAccount NOTIFY yandexChanged)
@@ -497,6 +502,21 @@ public:
   Q_INVOKABLE void home();
   Q_INVOKABLE void connectYandex(const QString &token, bool remember = true);
   Q_INVOKABLE void disconnectYandex();
+  Q_INVOKABLE void syncYandexLibrary();
+  Q_INVOKABLE void startYandexWave(const QString &seed = "user:onyourwave");
+  Q_INVOKABLE void stopYandexWave();
+  bool yandexWaveActive() const { return !m_waveSession.isEmpty(); }
+  bool yandexWaveBusy() const { return m_waveBusy; }
+  Q_INVOKABLE void cacheYandexTrack(const QVariantMap &track);
+  Q_INVOKABLE void cacheYandexCompanions();
+  Q_INVOKABLE void cancelYandexDownloads();
+  QString yandexCacheMode() const { return m_settings.value("yandexCacheMode", "auto").toString(); }
+  void setYandexCacheMode(const QString &mode);
+  int yandexCacheLimitMb() const { return m_settings.value("yandexCacheLimitMb", 0).toInt(); }
+  void setYandexCacheLimitMb(int value) { m_settings.setValue("yandexCacheLimitMb", qBound(0, value, 1048576)); emit yandexChanged(); }
+  Q_INVOKABLE void pruneYandexCache();
+  QString yandexDownloadStatus() const { return m_yandexDownloadStatus; }
+  Q_INVOKABLE void createYandexPlaylist(const QString &name, const QVariantList &items = {}, bool fromQueue = false);
   bool yandexConnected() const { return !m_yandexUid.isEmpty(); }
   bool yandexBusy() const { return m_yandexBusy; }
   QString yandexAccount() const { return m_yandexAccount; }
@@ -669,6 +689,24 @@ private:
   QVariantMap snapshot() const;
   void restore(const QVariantMap &);
   static QVariantList playable(const QVariantList &);
+  void initializeYandex();
+  void extendYandexWave(bool advance = false);
+  void waveOutcome(bool finished);
+  void waveEvent(const QString &type);
+  QString m_waveSession, m_waveSeed, m_waveFrom;
+  QVariantList m_waveFeedbacks;
+  bool m_waveBusy = false, m_waveAdvance = false, m_waveTerminated = false;
+  quint64 m_waveGeneration = 0, m_waveStartedToken = 0, m_waveFinishedToken = 0;
+  qint64 m_wavePlayedMs = 0;
+  void queueYandexDownload(const QString &id, bool assetsOnly = false);
+  void nextYandexDownload();
+  QList<QVariantMap> m_yandexDownloads;
+  QString m_yandexDownloadingId, m_yandexDownloadStatus;
+  void mutateYandex(QVariantMap args);
+  void applyYandexPlaylist(const QVariantMap &playlist);
+  void openYandexPlaylist(const QString &id);
+  void editYandexPlaylist(const QString &id, const QVariantList &rows);
+  quint64 m_yandexGeneration = 0;
   QString m_yandexUid, m_yandexAccount;
   bool m_yandexBusy = false;
   QSettings m_settings;

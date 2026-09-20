@@ -6,6 +6,8 @@
 #include "desktoptheme.h"
 #include <QSaveFile>
 #include <QClipboard>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QGuiApplication>
 #include <QSignalSpy>
 #include <QTemporaryDir>
@@ -32,6 +34,81 @@ private slots:
     QCoreApplication::setApplicationName("sung-test");
     QCoreApplication::setOrganizationName("SungTests");
   }
+  void yandexLibraryMutationsWaitForServer() {
+    const auto helper = qgetenv("SUNG_HELPER"), python = qgetenv("SUNG_PYTHON");
+    qputenv("SUNG_HELPER", qgetenv("SUNG_FIXTURE_HELPER")); qputenv("SUNG_PYTHON", "python3");
+    const auto restore = qScopeGuard([&] { qputenv("SUNG_HELPER", helper); qputenv("SUNG_PYTHON", python); });
+    Backend b; b.setWatchMusicFolders(false); b.m_yandexUid = "1"; b.m_favorites.clear(); b.m_playlists.clear();
+    const auto song = track("ym:42");
+    b.toggleLike(song); QVERIFY(!b.isLiked("ym:42"));
+    QTRY_VERIFY_WITH_TIMEOUT(!b.yandexBusy(), 5000); QVERIFY(b.isLiked("ym:42"));
+    b.toggleLike(track("ym:13"));
+    QTRY_VERIFY_WITH_TIMEOUT(!b.yandexBusy(), 5000); QVERIFY(!b.isLiked("ym:13"));
+    QVERIFY(b.error().contains("Expected Yandex")); b.dismissError();
+    b.toggleLike(song); QTRY_VERIFY_WITH_TIMEOUT(!b.yandexBusy(), 5000); QVERIFY(!b.isLiked("ym:42"));
+    b.syncYandexLibrary(); QTRY_VERIFY_WITH_TIMEOUT(b.isLiked("ym:42"), 5000);
+    QCOMPARE(b.playlists().size(), 1);
+    b.openPlaylist("ym:1:7"); QTRY_VERIFY_WITH_TIMEOUT(!b.busy(), 5000); QCOMPARE(b.results()->count(), 1);
+    b.removeFromPlaylist("ym:1:7", 0); QCOMPARE(b.results()->count(), 1);
+    QTRY_VERIFY_WITH_TIMEOUT(!b.yandexBusy(), 5000); QCOMPARE(b.results()->count(), 0);
+    b.renamePlaylist("ym:1:7", "Renamed"); QTRY_VERIFY_WITH_TIMEOUT(!b.yandexBusy(), 5000); QCOMPARE(b.title(), "Renamed");
+    b.deletePlaylist("ym:1:7"); QTRY_VERIFY_WITH_TIMEOUT(!b.yandexBusy(), 5000); QCOMPARE(b.playlists().size(), 0);
+    b.m_favorites.clear(); b.save();
+  }
+
+  void yandexArtistLoadMoreAppendsAndRefreshResets() {
+    const auto helper = qgetenv("SUNG_HELPER"), python = qgetenv("SUNG_PYTHON");
+    qputenv("SUNG_HELPER", qgetenv("SUNG_FIXTURE_HELPER")); qputenv("SUNG_PYTHON", "python3");
+    const auto restore = qScopeGuard([&] { qputenv("SUNG_HELPER", helper); qputenv("SUNG_PYTHON", python); });
+    Backend b;
+    b.open({{"id", "ym:5"}, {"kind", "artist"}});
+    QTRY_VERIFY_WITH_TIMEOUT(!b.busy(), 5000); QCOMPARE(b.results()->count(), 2); QVERIFY(b.canMore());
+    b.more(); QTRY_VERIFY_WITH_TIMEOUT(!b.busy(), 5000); QCOMPARE(b.results()->count(), 3); QVERIFY(!b.canMore());
+    b.refresh(); QTRY_VERIFY_WITH_TIMEOUT(!b.busy(), 5000); QCOMPARE(b.results()->count(), 2); QVERIFY(b.canMore());
+  }
+
+  void yandexWaveExtendsAndCancels() {
+    const auto helper = qgetenv("SUNG_HELPER"), python = qgetenv("SUNG_PYTHON");
+    qputenv("SUNG_HELPER", qgetenv("SUNG_FIXTURE_HELPER")); qputenv("SUNG_PYTHON", "python3");
+    const auto restore = qScopeGuard([&] { qputenv("SUNG_HELPER", helper); qputenv("SUNG_PYTHON", python); });
+    Backend b; b.setPrepareNext(false); b.setAutoplay(false); b.setYandexCacheMode("manual");
+    b.startYandexWave(); QVERIFY(b.yandexWaveBusy());
+    QTRY_VERIFY_WITH_TIMEOUT(!b.yandexWaveBusy(), 5000);
+    QVERIFY(b.yandexWaveActive()); QCOMPARE(b.queue()->count(), 5);
+    b.cancel("play"); b.m_waveStartedToken = b.m_trackToken; b.m_wavePlayedMs = 2300;
+    b.waveEvent("trackStarted"); b.waveOutcome(false); b.waveOutcome(false);
+    QCOMPARE(b.m_waveFeedbacks.size(), 2);
+    QCOMPARE(b.m_waveFeedbacks.last().toMap().value("event").toMap().value("type").toString(), "skip");
+    b.extendYandexWave(); QTRY_VERIFY_WITH_TIMEOUT(!b.yandexWaveBusy(), 5000);
+    QCOMPARE(b.queue()->count(), 10); QCOMPARE(b.m_waveFeedbacks.size(), 0);
+    b.extendYandexWave(); QTRY_VERIFY_WITH_TIMEOUT(!b.yandexWaveBusy(), 5000);
+    QCOMPARE(b.queue()->count(), 10); // Repeated server batches must not duplicate upcoming songs.
+    b.stopYandexWave(); QVERIFY(!b.yandexWaveActive());
+    b.startYandexWave(); b.stopYandexWave(); QTest::qWait(150);
+    QVERIFY(!b.yandexWaveActive()); QVERIFY(!b.yandexWaveBusy());
+    b.clearQueue(); b.setYandexCacheMode("auto"); b.setPrepareNext(true);
+  }
+
+  void yandexLiveStreaming() {
+    if (qEnvironmentVariable("SUNG_YANDEX_LIVE_TEST") != "1") QSKIP("Optional live Yandex streaming check");
+    QTemporaryDir cache;
+    const auto helper = QFileInfo(QString::fromUtf8(qgetenv("SUNG_FIXTURE_HELPER"))).dir().absoluteFilePath("../helper/catalog.py");
+    const auto oldHelper = qgetenv("SUNG_HELPER"), oldCache = qgetenv("YANDEX_MUSIC_CACHE_DIR");
+    const auto restore = qScopeGuard([&] { qputenv("SUNG_HELPER", oldHelper); qputenv("YANDEX_MUSIC_CACHE_DIR", oldCache); });
+    qputenv("SUNG_HELPER", helper.toUtf8()); qputenv("YANDEX_MUSIC_CACHE_DIR", cache.path().toUtf8());
+    QFile fixture(QString::fromUtf8(qgetenv("SUNG_YANDEX_LIVE_TRACK")));
+    QVERIFY(fixture.open(QIODevice::ReadOnly));
+    const auto song = QJsonDocument::fromJson(fixture.readAll()).object().toVariantMap();
+    Backend b; b.setVolume(0); b.setAutoplay(false); b.setOnlineArtwork(false); b.setPrepareNext(false); b.setYandexCacheMode("manual"); b.clearQueue();
+    b.playItem(song);
+    QTRY_VERIFY_WITH_TIMEOUT(b.playing(), 25000);
+    QTRY_VERIFY_WITH_TIMEOUT(b.position() > 500, 15000);
+    QCOMPARE(b.m_media().source().scheme(), "https");
+    QCOMPARE(QDir(cache.path()).entryList(QDir::Files).size(), 0);
+    b.pause(); b.seek(30000); QTRY_VERIFY_WITH_TIMEOUT(b.position() >= 29000, 5000);
+    b.clearQueue(); b.setYandexCacheMode("auto");
+  }
+
   void yandexCachedPlaybackWithoutCredentials() {
     QTemporaryDir cache;
     const auto helper = QFileInfo(QString::fromUtf8(qgetenv("SUNG_FIXTURE_HELPER")))

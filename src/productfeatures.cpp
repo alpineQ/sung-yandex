@@ -441,6 +441,7 @@ bool Backend::restorePlaylistVersion(const QString &id,int index) {
   if(index<0 || index>=versions.size())return false;
   if(!smartPlaylist(id).isEmpty())return false;
   const auto tracks=playable(versions[index].toMap().value("tracks").toList());
+  if (id.startsWith("ym:")) { editYandexPlaylist(id, tracks); return true; }
   for(int i=0;i<m_playlists.size();++i){
     auto p=m_playlists[i].toMap();
     if(p.value("id").toString()!=id)continue;

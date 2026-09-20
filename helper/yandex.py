@@ -23,21 +23,28 @@ SIGN_KEY = b'p93jhgh689SBReK6ghtw62'  # Public API protocol key, not an account 
 MAX_AUDIO = 512 * 1024 * 1024
 
 
+def dotenv_token(filename):
+    if not filename:
+        return ''
+    # Parse data, never execute a shell or copy credentials into this repository.
+    for line in Path(filename).expanduser().read_text().splitlines():
+        key, sep, value = line.strip().removeprefix('export ').partition('=')
+        if sep and key.strip() == 'YANDEX_MUSIC_TOKEN':
+            return value.strip().strip("\"'")
+    return ''
+
+
 def token():
     if os.environ.get('SUNG_YANDEX_LOGGED_OUT') == '1':
         return ''
     value = os.environ.get('YANDEX_MUSIC_TOKEN', '').strip()
     if value:
         return value
-    filename = os.environ.get('YANDEX_MUSIC_ENV_FILE')
-    if filename:
-        # Read dotenv data without evaluating shell code or logging credentials.
-        for line in Path(filename).expanduser().read_text().splitlines():
-            key, sep, value = line.strip().removeprefix('export ').partition('=')
-            if sep and key.strip() == 'YANDEX_MUSIC_TOKEN':
-                return value.strip().strip('\"\'')
+    value = dotenv_token(os.environ.get('YANDEX_MUSIC_ENV_FILE'))
+    if value:
+        return value
     from yandex_credentials import load
-    return load()
+    return load() or dotenv_token(os.environ.get('YANDEX_MUSIC_FALLBACK_ENV_FILE'))
 
 
 def cache_dir():
@@ -80,7 +87,8 @@ def cover(item):
     uri = item.get('coverUri') or item.get('ogImage') or (item.get('cover') or {}).get('uri') or ''
     if not uri:
         return ''
-    return ('https://' + uri.removeprefix('https://').removeprefix('http://')).replace('%%', '400x400')
+    from yandex_cache import local_artwork
+    return local_artwork(('https://' + uri.removeprefix('https://').removeprefix('http://')).replace('%%', '400x400'))
 
 
 def normalize(item, kind='song'):
@@ -110,8 +118,8 @@ def cached_tracks():
             meta = json.loads(path.read_text())
             if not cached_audio(meta['id']):
                 continue
-            raw = dict(id=meta['id'], title=meta.get('title'), artists=[{'name': a} for a in meta.get('artists', [])],
-                       albums=[{'title': meta.get('album')}], coverUri=meta.get('cover_uri'), durationMs=meta.get('duration_ms'))
+            raw = dict(id=meta['id'], title=meta.get('title'), artists=[{'name': a, 'id': (meta.get('artist_ids') or [])[i] if i < len(meta.get('artist_ids') or []) else None} for i, a in enumerate(meta.get('artists', []))],
+                       albums=[{'title': meta.get('album'), 'id': meta.get('album_id')}], coverUri=meta.get('cover_uri'), durationMs=meta.get('duration_ms'))
             item = normalize(raw)
             item['cached'] = True
             items.append(item)
@@ -172,7 +180,7 @@ class Api:
 def save_meta(identity, raw):
     root = cache_dir()
     album = (raw.get('albums') or [{}])[0]
-    meta = dict(id=identity, title=raw.get('title'), artists=[a.get('name', '') for a in raw.get('artists', [])],
+    meta = dict(id=identity, album_id=album.get('id'), artist_ids=[a.get('id') for a in raw.get('artists', [])], title=raw.get('title'), artists=[a.get('name', '') for a in raw.get('artists', [])],
                 album=album.get('title'), cover_uri=raw.get('coverUri') or album.get('coverUri'), duration_ms=raw.get('durationMs'))
     fd, temporary = tempfile.mkstemp(prefix=identity + '.', suffix='.tmp', dir=root)
     try:
@@ -222,6 +230,11 @@ def buffer(req):
             save_meta(identity, api.tracks([identity])[0])
         except (OSError, ValueError, IndexError):
             pass  # An unavailable metadata endpoint must not stop valid audio.
+    try:
+        stat = audio.stat()
+        os.utime(audio, ns=(time.time_ns(), stat.st_mtime_ns))
+    except OSError:
+        pass
     if req.get('directory'):
         # Sung accepts only files in its private QTemporaryDir. A hardlink keeps
         # the existing lifetime and crossfade rules, without duplicating audio.
@@ -248,14 +261,46 @@ def collection(api, identity):
 
 def run(req):
     op = req.get('op')
+    if op.startswith('wave-'):
+        from yandex_wave import run as wave_run
+        return wave_run(req)
+    if op.startswith('yandex-cache'):
+        from yandex_cache import run as cache_run
+        return cache_run(req)
+    if op == 'lyrics':
+        from yandex_cache import lyrics
+        return lyrics(req['id'])
+    if op.startswith('yandex-'):
+        from yandex_library import run as library_run
+        return library_run(req)
     if op == 'account-connect':
         from yandex_credentials import connect
         return connect(req)
+    if op == 'account-status':
+        mode = 'auto'
+        config = Path(os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config')) / 'yamusic/config.toml'
+        try:
+            chosen = tomllib.loads(config.read_text()).get('cache')
+            mode = {'auto': 'auto', 'hotkey': 'manual', 'off': 'off'}.get(chosen, 'auto')
+        except (OSError, ValueError):
+            pass
+        value = token()
+        if not value: return {'connected': False, 'cacheMode': mode}
+        account = Api(value).get('account/status')['account']
+        return {'connected': True, 'cacheMode': mode, 'uid': str(account['uid']), 'accountName': account.get('displayName') or account.get('login', '')}
     if op == 'account-forget':
         from yandex_credentials import secret_tool
         secret_tool('clear')
         return {}
-    if op in ('buffer', 'resolve'):
+    if op == 'resolve':
+        identity = track_id(req['id'])
+        if cached_audio(identity):
+            return buffer(req)
+        info = Api().file_info(identity)
+        if info.get('codec') not in CODECS or urlparse(info.get('url', '')).scheme != 'https':
+            raise ValueError('Yandex returned an unsupported audio format or URL.')
+        return {'url': info['url'], 'codec': info['codec'], 'download': True}
+    if op == 'buffer':
         return buffer(req)
     if op == 'home':
         offline = cached_tracks()
@@ -303,17 +348,8 @@ def run(req):
             result.update(title=info.get('name', ''), art=cover(info))
         return result
     if op == 'radio':
-        data = api.get(f'tracks/{track_id(identity)}/similar')
-        return {'items': [normalize(t) for t in data.get('similarTracks', [])]}
-    if op == 'lyrics':
-        ts = str(int(time.time()))
-        signature = base64.b64encode(hmac.new(SIGN_KEY, (track_id(identity) + ts).encode(), hashlib.sha256).digest()).decode()
-        data = api.get(f'tracks/{identity}/lyrics', {'format': 'LRC', 'timeStamp': ts, 'sign': signature})
-        if urlparse(data['downloadUrl']).scheme != 'https':
-            raise ValueError('Invalid lyrics URL')
-        with urlopen(data['downloadUrl'], timeout=10) as response:
-            lyrics = response.read(1024 * 1024).decode()
-        return {'lrc': lyrics, 'lyrics': lyrics, 'source': 'Yandex Music'}
+        from yandex_wave import run as wave_run
+        return wave_run({'op': 'wave-start', 'seed': 'track:' + track_id(identity)})
     if op == 'link':
         parsed = urlparse(req['url'])
         if parsed.scheme != 'https' or parsed.hostname not in ('music.yandex.ru', 'music.yandex.com', 'music.yandex.kz', 'music.yandex.by'):

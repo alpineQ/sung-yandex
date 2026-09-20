@@ -928,6 +928,11 @@ ApplicationWindow {
                                 ]
                             }
                         }
+                        RowLayout {
+                            visible: app.page==="home"; Layout.fillWidth: true
+                            MButton { objectName: "myWaveButton"; text: "My Wave"; tonal: true; busy: app.yandexWaveBusy; enabled: !app.yandexWaveBusy; onClicked: app.startYandexWave() }
+                            MButton { text: "Stop wave"; visible: app.yandexWaveActive || app.yandexWaveBusy; onClicked: app.stopYandexWave() }
+                        }
                         Flow {
                             objectName: "searchFilters"
                             visible: app.page==="search"; Layout.fillWidth: true; spacing: 8
@@ -1604,6 +1609,7 @@ ApplicationWindow {
         MMenuItem { text: "Artwork…"; visible: window.menuItem.id===app.current.id && !!app.current.id; onTriggered: artworkControls.open() }
         MMenuItem { symbol: "disc"; text: "Go to album"; visible: !!window.menuItem.albumId; onTriggered: app.open(window.relatedItem(window.menuItem,"album")) }
         MMenuItem { text: ["subsonic","jellyfin"].indexOf(window.menuItem.source)>=0?"Copy song details":window.menuItem.localPath?"Copy file path":"Copy link"; onTriggered: app.copyLink(window.menuItem) }
+        MMenuItem { text: "Save offline"; visible: window.menuItem.source==="yandex" && !!window.menuItem.videoId; onTriggered: app.cacheYandexTrack(window.menuItem) }
         MMenuItem { text: "Add to server playlist"; visible: !!window.menuItem.serverSong; enabled: app.server.connected; onTriggered: {window.batchItems=[];serverAddDialog.open()} }
         MMenuItem { text: "Rate song"; visible: !!window.menuItem.serverSong && app.server.supportsRating; enabled: app.server.connected; onTriggered: serverRatingDialog.open() }
         MMenuItem { text: "Remove from server playlist"; visible: app.serverPlaylistEditable && !window.menuQueue; onTriggered: app.removeServerRows([window.menuIndex]) }
@@ -1748,9 +1754,18 @@ ApplicationWindow {
         id: playlistDialog; objectName: "playlistDialog"; initialFocus: playlistName; acceptText: window.playlistAction==="rename" ? "Save" : "Create"; anchors.centerIn: parent; width: 380; modal: true; acceptEnabled: playlistName.text.trim().length>0; title: window.playlistAction==="rename"?"Rename playlist":"New playlist"
         palette.windowText: Theme.text; palette.text: Theme.text; palette.buttonText: Theme.text
         standardButtons: Dialog.Save | Dialog.Cancel
-        MTextField { id: playlistName; objectName: "playlistName"; variant: "filled"; width: parent.width; label: "Playlist name"; maximumLength: 120; onAccepted: if(playlistDialog.acceptEnabled)playlistDialog.accept() }
-        onOpened: playlistName.forceActiveFocus()
-        onAccepted: { if(window.playlistAction==="queue")app.saveQueue(playlistName.text);else if(window.playlistAction==="rename")app.renamePlaylist(window.editPlaylistId,playlistName.text);else {const id=app.createPlaylist(playlistName.text);if(id&&window.playlistAction==="add"){if(window.batchItems.length)app.addItemsToPlaylist(id,window.batchItems);else app.addToPlaylist(id,window.menuItem);}} }
+        Column {
+            width: parent.width; spacing: 16
+            MTextField { id: playlistName; objectName: "playlistName"; variant: "filled"; width: parent.width; label: "Playlist name"; maximumLength: 120; onAccepted: if(playlistDialog.acceptEnabled)playlistDialog.accept() }
+            MSegmentedControl { id: playlistDestination; width: parent.width; visible: window.playlistAction!=="rename" && app.yandexConnected; accessibleName: "Save playlist to"; options: [{key:"yandex",label:"Yandex Music"},{key:"local",label:"This device"}]; value: "yandex"; onChosen: value=>playlistDestination.value=value }
+        }
+        onOpened: { playlistName.forceActiveFocus(); playlistDestination.value=app.yandexConnected?"yandex":"local"; }
+        onAccepted: {
+            if(window.playlistAction!=="rename" && app.yandexConnected && playlistDestination.value==="yandex") {
+                const items=window.playlistAction==="add" ? (window.batchItems.length ? window.batchItems : [window.menuItem]) : [];
+                app.createYandexPlaylist(playlistName.text, items, window.playlistAction==="queue"); return;
+            }
+            if(window.playlistAction==="queue")app.saveQueue(playlistName.text);else if(window.playlistAction==="rename")app.renamePlaylist(window.editPlaylistId,playlistName.text);else {const id=app.createPlaylist(playlistName.text);if(id&&window.playlistAction==="add"){if(window.batchItems.length)app.addItemsToPlaylist(id,window.batchItems);else app.addToPlaylist(id,window.menuItem);}} }
     }
     MDialog {
         id: addPlaylistDialog; objectName: "addPlaylistDialog"; anchors.centerIn: parent; width: 360; height: Math.min(window.height-64,Math.min(500,268+app.playlists.length*52)); modal: true; title: "Add to playlist"; standardButtons: Dialog.Cancel
@@ -2001,9 +2016,22 @@ ApplicationWindow {
                     busy: app.yandexBusy
                     onClicked: { app.connectYandex(yandexToken.text, rememberYandex.checked); yandexToken.clear(); }
                 }
+                MButton { text: app.yandexWaveBusy ? "Loading My Wave…" : "My Wave"; tonal: true; enabled: !app.yandexWaveBusy; busy: app.yandexWaveBusy; onClicked: { settingsDialog.close(); app.startYandexWave(); } }
+                MButton { text: "Stop extending My Wave"; visible: app.yandexWaveActive || app.yandexWaveBusy; onClicked: app.stopYandexWave() }
+                SungText { text: "Audio downloads"; color: Theme.muted }
+                MSegmentedControl { Layout.fillWidth: true; accessibleName: "Audio downloads"; options: [{key:"auto",label:"Automatic"},{key:"manual",label:"Manual"},{key:"off",label:"Off"}]; value: app.yandexCacheMode; onChosen: value=>app.yandexCacheMode=value }
+                SungText { text: "Shared yamusic audio cache limit"; color: Theme.muted }
+                MSegmentedControl { Layout.fillWidth: true; accessibleName: "Shared audio cache size limit"; options: [{key:"0",label:"Unlimited"},{key:"4096",label:"4 GiB"},{key:"16384",label:"16 GiB"}]; value: String(app.yandexCacheLimitMb); onChosen: value=>app.yandexCacheLimitMb=parseInt(value) }
+                SungText { text: "With a limit, the oldest unused audio downloads are removed. The playing track is kept."; wrapMode: Text.Wrap; Layout.fillWidth: true; color: Theme.muted }
+                MButton { text: "Apply limit and free space"; enabled: app.yandexCacheLimitMb>0; onClicked: app.pruneYandexCache() }
+                MButton { text: "Save current track offline"; enabled: !!app.current.id && app.current.id.startsWith("ym:") && app.yandexCacheMode!=="off"; onClicked: app.cacheYandexTrack(app.current) }
+                MButton { text: "Download artwork and lyrics for cached songs"; onClicked: app.cacheYandexCompanions() }
+                SungText { text: app.yandexDownloadStatus; visible: !!text; wrapMode: Text.Wrap; Layout.fillWidth: true; color: Theme.muted }
+                MButton { text: "Cancel downloads"; visible: !!app.yandexDownloadStatus; onClicked: app.cancelYandexDownloads() }
+                MButton { text: "Sync Yandex library"; visible: app.yandexConnected; enabled: !app.yandexBusy; onClicked: app.syncYandexLibrary() }
                 MButton { text: "Disconnect and forget saved token"; visible: app.yandexConnected; enabled: !app.yandexBusy; onClicked: app.disconnectYandex() }
                 SungText {
-                    text: "Tokens are saved in the system keyring when Remember is enabled. Environment tokens and yamusic keyring credentials also work. Played songs are downloaded automatically; Home → Downloaded works offline. Hearts and custom playlists are stored on this device."
+                    text: "Tokens are saved in the system keyring when Remember is enabled. Environment tokens and yamusic keyring credentials also work. Choose automatic or manual audio downloads; Home → Downloaded works offline. Hearts sync with Yandex Music. New playlists can be saved to Yandex or this device."
                     wrapMode: Text.Wrap; Layout.fillWidth: true; Layout.minimumWidth: 0
                     color: Theme.muted; font.pixelSize: Theme.bodyMedium
                 }

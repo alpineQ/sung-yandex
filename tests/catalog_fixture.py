@@ -16,6 +16,8 @@ elif op in ('album','playlist','link'):
     if op=='album' and os.environ.get('SUNG_ALBUM_FIXTURE'):
         data.update(artist='Test artist', year='2026', art=os.environ['SUNG_ALBUM_FIXTURE'])
         data['items'][0]['discNumber']=1;data['items'][1]['discNumber']=2
+elif op=='artist' and r.get('id')=='ym:5':
+    data.update(items=[song(100)] if r.get('page') else [song(1),song(2)], nextPage=2 if r.get('page') else 1, hasMore=not bool(r.get('page')), title='Paged artist')
 elif op=='artist': data.update(title='Test artist',sections=[{'title':'Songs','items':[song(1)]}])
 elif op=='lyrics':
     data['lyrics']='Test lyrics'
@@ -57,5 +59,18 @@ elif op in ('resolve','buffer'):
                 audio.setnchannels(1);audio.setsampwidth(2);audio.setframerate(8000);audio.writeframes(b'\0'*2*8000*60)
             data.update(file=str(path),seconds=60)
     else: data={'ok':False,'error':'Fixture does not stream audio'}
+elif op=='yandex-like':
+    if r['id']=='ym:13': data={'ok':False,'error':'Expected Yandex mutation failure'}
+    else: data.update(id=r['id'],liked=r['liked'])
+elif op=='yandex-library':
+    data.update(uid='1',accountName='Test',favorites=[dict(song(42),id='ym:42',videoId='ym:42',source='yandex')],playlists=[dict(id='ym:1:7',title='Remote',remote=True,revision=1,count=1,loaded=False)])
+elif op.startswith('yandex-playlist-'):
+    if op=='yandex-playlist-delete': data['deleted']=r['id']
+    else:
+        tracks=r.get('items',[dict(song(42),id='ym:42',videoId='ym:42',source='yandex')])
+        data['playlist']=dict(id=r.get('id','ym:1:7'),title=r.get('title','Remote'),remote=True,revision=2,loaded=True,tracks=tracks)
+elif op in ('wave-start','wave-next'):
+    rows=[dict(song(i),id=f'ym:{i}',videoId=f'ym:{i}',source='yandex',_waveSession='fixture-session',_waveBatch='fixture-batch') for i in (range(10,15) if op=='wave-next' else range(1,6))]
+    data.update(session='fixture-session',batch='fixture-batch',items=rows,terminated=False)
 else: data={'ok':False,'error':'Unknown fixture request'}
 print(json.dumps(data))
