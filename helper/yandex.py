@@ -349,7 +349,7 @@ def run(req):
         return result
     if op == 'radio':
         from yandex_wave import run as wave_run
-        return wave_run({'op': 'wave-start', 'seed': 'track:' + track_id(identity)})
+        return wave_run({'op': 'wave-start', 'seeds': ['track:' + track_id(identity)]})
     if op == 'link':
         parsed = urlparse(req['url'])
         if parsed.scheme != 'https' or parsed.hostname not in ('music.yandex.ru', 'music.yandex.com', 'music.yandex.kz', 'music.yandex.by'):

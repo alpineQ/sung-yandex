@@ -80,6 +80,13 @@ class Backend : public QObject {
   Q_OBJECT
   Q_PROPERTY(bool yandexWaveActive READ yandexWaveActive NOTIFY yandexChanged)
   Q_PROPERTY(bool yandexWaveBusy READ yandexWaveBusy NOTIFY yandexChanged)
+  // Personal wave tuning: the chosen context seed and one seed per setting group,
+  // keyed "context", "diversity", "moodEnergy" and "language"; absent means any.
+  Q_PROPERTY(QVariantMap yandexWaveSettings READ yandexWaveSettings NOTIFY yandexChanged)
+  Q_PROPERTY(QVariantMap yandexWaveOptions READ yandexWaveOptions NOTIFY yandexChanged)
+  Q_PROPERTY(bool yandexWaveOptionsBusy READ yandexWaveOptionsBusy NOTIFY yandexChanged)
+  Q_PROPERTY(bool yandexWavePersonal READ yandexWavePersonal NOTIFY yandexChanged)
+  Q_PROPERTY(QString yandexWaveTitle READ yandexWaveTitle NOTIFY yandexChanged)
   Q_PROPERTY(int yandexCacheLimitMb READ yandexCacheLimitMb WRITE setYandexCacheLimitMb NOTIFY yandexChanged)
   Q_PROPERTY(QString yandexCacheMode READ yandexCacheMode WRITE setYandexCacheMode NOTIFY yandexChanged)
   Q_PROPERTY(QString yandexDownloadStatus READ yandexDownloadStatus NOTIFY yandexChanged)
@@ -504,10 +511,20 @@ public:
   Q_INVOKABLE void connectYandex(const QString &token, bool remember = true);
   Q_INVOKABLE void disconnectYandex();
   Q_INVOKABLE void syncYandexLibrary();
-  Q_INVOKABLE void startYandexWave(const QString &seed = "user:onyourwave");
+  // No seeds start the personal wave with the saved settings.
+  Q_INVOKABLE void startYandexWave(const QStringList &seeds = {});
   Q_INVOKABLE void stopYandexWave();
   bool yandexWaveActive() const { return !m_waveSession.isEmpty(); }
   bool yandexWaveBusy() const { return m_waveBusy; }
+  QVariantMap yandexWaveSettings() const { return m_settings.value("yandexWaveSettings").toMap(); }
+  // An empty seed resets the group; a running personal wave restarts with the change.
+  Q_INVOKABLE void setYandexWaveSetting(const QString &key, const QString &seed);
+  Q_INVOKABLE void resetYandexWaveSettings();
+  QVariantMap yandexWaveOptions() const { return m_waveOptions; }
+  bool yandexWaveOptionsBusy() const { return m_waveOptionsBusy; }
+  Q_INVOKABLE void loadYandexWaveOptions();
+  bool yandexWavePersonal() const { return !m_waveSeeds.isEmpty() && !m_waveSeeds.first().startsWith("track:"); }
+  QString yandexWaveTitle() const { return m_waveTitle; }
   Q_INVOKABLE void cacheYandexTrack(const QVariantMap &track);
   Q_INVOKABLE void cacheYandexCompanions();
   Q_INVOKABLE void cancelYandexDownloads();
@@ -694,7 +711,12 @@ private:
   void extendYandexWave(bool advance = false);
   void waveOutcome(bool finished);
   void waveEvent(const QString &type);
-  QString m_waveSession, m_waveSeed, m_waveFrom;
+  QStringList personalWaveSeeds() const;
+  void applyYandexWaveSettings(const QVariantMap &settings);
+  QString m_waveSession, m_waveFrom, m_waveTitle;
+  QStringList m_waveSeeds;
+  QVariantMap m_waveOptions;
+  bool m_waveOptionsBusy = false;
   QVariantList m_waveFeedbacks;
   bool m_waveBusy = false, m_waveAdvance = false, m_waveTerminated = false;
   quint64 m_waveGeneration = 0, m_waveStartedToken = 0, m_waveFinishedToken = 0;

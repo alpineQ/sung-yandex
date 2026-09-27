@@ -71,6 +71,9 @@ elif op.startswith('yandex-playlist-'):
         data['playlist']=dict(id=r.get('id','ym:1:7'),title=r.get('title','Remote'),remote=True,revision=2,loaded=True,tracks=tracks)
 elif op in ('wave-start','wave-next'):
     rows=[dict(song(i),id=f'ym:{i}',videoId=f'ym:{i}',source='yandex',_waveSession='fixture-session',_waveBatch='fixture-batch') for i in (range(10,15) if op=='wave-next' else range(1,6))]
-    data.update(session='fixture-session',batch='fixture-batch',items=rows,terminated=False)
+    data.update(session='fixture-session',batch='fixture-batch',items=rows,terminated=False,seeds=r['seeds'],title=' · '.join(r['seeds']))
+elif op=='wave-settings':
+    data.update(contexts=[dict(seed='activity:workout',name='Тренируюсь')],
+                groups=[dict(key='diversity',name='По характеру',values=[dict(seed='settingDiversity:discover',name='Незнакомое',unspecified=False),dict(seed='settingDiversity:default',name='Любое',unspecified=True)])])
 else: data={'ok':False,'error':'Unknown fixture request'}
 print(json.dumps(data))

@@ -263,7 +263,7 @@ void Backend::waveOutcome(bool finished) {
 void Backend::stopYandexWave() {
   waveOutcome(false);
   if (!m_waveSession.isEmpty() && !m_waveFeedbacks.isEmpty()) {
-    request("wave-final", {{"op", "wave-next"}, {"session", m_waveSession}, {"seed", m_waveSeed},
+    request("wave-final", {{"op", "wave-next"}, {"session", m_waveSession}, {"seeds", m_waveSeeds},
                           {"feedbacks", m_waveFeedbacks}}, [](const QVariantMap &) {});
   }
   ++m_waveGeneration; cancel("yandex-wave");
@@ -272,13 +272,55 @@ void Backend::stopYandexWave() {
   emit yandexChanged();
 }
 
-void Backend::startYandexWave(const QString &seed) {
+QStringList Backend::personalWaveSeeds() const {
+  const auto settings = yandexWaveSettings();
+  QStringList seeds{settings.value("context", "user:onyourwave").toString()};
+  for (const auto key : {"diversity", "moodEnergy", "language"})
+    if (settings.contains(key)) seeds.append(settings.value(key).toString());
+  return seeds;
+}
+
+void Backend::applyYandexWaveSettings(const QVariantMap &settings) {
+  m_settings.setValue("yandexWaveSettings", settings);
+  if ((yandexWaveActive() || m_waveBusy) && yandexWavePersonal()) {
+    stopYandexWave(); startYandexWave();
+  } else emit yandexChanged();
+}
+
+void Backend::setYandexWaveSetting(const QString &key, const QString &seed) {
+  if (!QStringList{"context", "diversity", "moodEnergy", "language"}.contains(key)) {
+    qFatal("Unknown My Wave setting %s", qPrintable(key));
+  }
+  auto settings = yandexWaveSettings();
+  if (settings.value(key).toString() == seed || (seed.isEmpty() && !settings.contains(key))) return;
+  if (seed.isEmpty()) settings.remove(key); else settings.insert(key, seed);
+  applyYandexWaveSettings(settings);
+}
+
+void Backend::resetYandexWaveSettings() {
+  if (!yandexWaveSettings().isEmpty()) applyYandexWaveSettings({});
+}
+
+void Backend::loadYandexWaveOptions() {
+  if (m_waveOptionsBusy || !m_waveOptions.isEmpty()) return;
+  m_waveOptionsBusy = true;
+  emit yandexChanged();
+  request("yandex-wave-settings", {{"op", "wave-settings"}}, [this](const QVariantMap &data) {
+    m_waveOptionsBusy = false;
+    if (!data.value("ok").toBool()) { emit yandexChanged(); notifyError(data.value("error").toString()); return; }
+    m_waveOptions = {{"contexts", data.value("contexts")}, {"groups", data.value("groups")}};
+    emit yandexChanged();
+  });
+}
+
+void Backend::startYandexWave(const QStringList &requested) {
   if (m_waveBusy) return;
   stopYandexWave();
-  m_waveBusy = true; m_waveSeed = seed;
+  const auto seeds = requested.isEmpty() ? personalWaveSeeds() : requested;
+  m_waveBusy = true; m_waveSeeds = seeds; m_waveTitle.clear();
   const auto generation = m_waveGeneration;
   emit yandexChanged();
-  request("yandex-wave", {{"op", "wave-start"}, {"seed", seed}}, [this, generation](const QVariantMap &data) {
+  request("yandex-wave", {{"op", "wave-start"}, {"seeds", seeds}}, [this, generation](const QVariantMap &data) {
     if (generation != m_waveGeneration) return;
     m_waveBusy = false;
     if (!data.value("ok").toBool()) { emit yandexChanged(); notifyError(data.value("error").toString()); return; }
@@ -286,6 +328,7 @@ void Backend::startYandexWave(const QString &seed) {
     if (rows.isEmpty()) { emit yandexChanged(); notifyError("My Wave returned no playable tracks. Try again."); return; }
     m_waveSession = data.value("session").toString();
     m_waveFrom = data.value("from").toString();
+    m_waveTitle = data.value("title").toString();
     m_waveTerminated = data.value("terminated").toBool();
     m_queue.reconcile(rows); m_index = -1;
     setShuffle(false); setRepeat(0);
@@ -307,7 +350,7 @@ void Backend::extendYandexWave(bool advance) {
     if (song.value("id").toString().startsWith("ym:")) queue.append(song.value("id").toString().mid(3));
   }
   emit yandexChanged();
-  request("yandex-wave", {{"op", "wave-next"}, {"seed", m_waveSeed}, {"session", m_waveSession},
+  request("yandex-wave", {{"op", "wave-next"}, {"seeds", m_waveSeeds}, {"session", m_waveSession},
                           {"from", m_waveFrom}, {"queue", queue}, {"feedbacks", m_waveFeedbacks}},
           [this, generation, feedbackCount](const QVariantMap &data) {
     if (generation != m_waveGeneration) return;

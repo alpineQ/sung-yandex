@@ -75,6 +75,29 @@ class StreamingTests(unittest.TestCase):
             with patch.dict(os.environ, {'SUNG_YANDEX_LOGGED_OUT': '1'}):
                 self.assertEqual(yandex.token(), '')
 
+    def test_wave_starts_from_every_seed_and_reports_its_name(self):
+        with patch.object(yandex, 'Api') as api:
+            api.return_value.get.return_value = {'radioSessionId': 's', 'sequence': [], 'wave': {'name': 'Тренируюсь · Бодрое'}}
+            seeds = ['activity:workout', 'settingMoodEnergy:active']
+            result = wave.run({'op': 'wave-start', 'seeds': seeds})
+            self.assertEqual(api.return_value.get.call_args.kwargs['json_data']['seeds'], seeds)
+            self.assertEqual(result['title'], 'Тренируюсь · Бодрое')
+            for bad in (['settingLanguage:ru ssian'], ['track:abc'], []):
+                with self.assertRaises(ValueError):
+                    wave.run({'op': 'wave-start', 'seeds': bad} if bad else {'op': 'wave-start', 'seeds': ['x'] * 9})
+
+    def test_wave_settings_lists_contexts_and_setting_seeds(self):
+        values = [{'value': 'calm', 'name': 'Спокойное', 'serializedSeed': 'settingMoodEnergy:calm'},
+                  {'value': 'all', 'name': 'Любое', 'unspecified': True, 'serializedSeed': 'settingMoodEnergy:all'}]
+        restrictions = {key: {'name': key, 'possibleValues': values} for key in ('diversity', 'moodEnergy', 'language')}
+        with patch.object(yandex, 'Api') as api:
+            api.return_value.get.return_value = {'settingRestrictions': restrictions, 'blocks': [
+                {'type': 'contexts', 'items': [{'id': {'type': 'activity', 'tag': 'workout'}, 'name': 'Тренируюсь'}]}]}
+            result = wave.run({'op': 'wave-settings'})
+        self.assertEqual(result['contexts'], [{'seed': 'activity:workout', 'name': 'Тренируюсь'}])
+        self.assertEqual([g['key'] for g in result['groups']], ['diversity', 'moodEnergy', 'language'])
+        self.assertEqual(result['groups'][1]['values'][1], {'seed': 'settingMoodEnergy:all', 'name': 'Любое', 'unspecified': True})
+
     def test_expired_wave_session_starts_a_new_session(self):
         with patch.object(yandex, 'Api') as api:
             api.return_value.get.side_effect = [{'unknownSession': True}, {'radioSessionId': 'new', 'sequence': []}]

@@ -86,6 +86,23 @@ private slots:
     b.stopYandexWave(); QVERIFY(!b.yandexWaveActive());
     b.startYandexWave(); b.stopYandexWave(); QTest::qWait(150);
     QVERIFY(!b.yandexWaveActive()); QVERIFY(!b.yandexWaveBusy());
+    // Tuning is saved while idle and restarts a running personal wave with its seeds.
+    b.resetYandexWaveSettings();
+    b.setYandexWaveSetting("diversity", "settingDiversity:discover"); QVERIFY(!b.yandexWaveBusy());
+    b.startYandexWave(); QTRY_VERIFY_WITH_TIMEOUT(b.yandexWaveActive(), 5000);
+    QCOMPARE(b.yandexWaveTitle(), "user:onyourwave · settingDiversity:discover");
+    b.setYandexWaveSetting("context", "activity:workout"); QVERIFY(b.yandexWaveBusy());
+    QTRY_VERIFY_WITH_TIMEOUT(b.yandexWaveActive(), 5000);
+    QCOMPARE(b.yandexWaveTitle(), "activity:workout · settingDiversity:discover");
+    b.setYandexWaveSetting("diversity", ""); QTRY_VERIFY_WITH_TIMEOUT(b.yandexWaveActive(), 5000);
+    QCOMPARE(b.yandexWaveTitle(), "activity:workout");
+    b.startYandexWave({"track:7"}); QTRY_VERIFY_WITH_TIMEOUT(b.yandexWaveActive(), 5000);
+    QVERIFY(!b.yandexWavePersonal());
+    b.resetYandexWaveSettings(); QVERIFY(!b.yandexWaveBusy()); // Track radio keeps playing.
+    QVERIFY(b.yandexWaveSettings().isEmpty());
+    b.loadYandexWaveOptions(); QTRY_VERIFY_WITH_TIMEOUT(!b.yandexWaveOptionsBusy(), 5000);
+    QCOMPARE(b.yandexWaveOptions().value("contexts").toList().size(), 1);
+    b.stopYandexWave();
     b.clearQueue(); b.setYandexCacheMode("auto"); b.setPrepareNext(true);
   }
 

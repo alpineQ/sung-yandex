@@ -867,7 +867,7 @@ void Backend::next() {
     playAt(0,1);
     return;
   }
-  if (autoplay() && current().value("id").toString().startsWith("ym:")) { startYandexWave("track:" + current().value("id").toString().mid(3)); return; }
+  if (autoplay() && current().value("id").toString().startsWith("ym:")) { startYandexWave({"track:" + current().value("id").toString().mid(3)}); return; }
   if (autoplay() && !current().value("videoId").toString().isEmpty()) {
     m_resolving = true;
     emit playbackChanged();
@@ -983,7 +983,7 @@ void Backend::seek(qint64 p) {
   emit seeked(target);
 }
 void Backend::radio(const QVariantMap &item) {
-  if (item.value("id").toString().startsWith("ym:")) { startYandexWave("track:" + item.value("id").toString().mid(3)); return; }
+  if (item.value("id").toString().startsWith("ym:")) { startYandexWave({"track:" + item.value("id").toString().mid(3)}); return; }
   auto id = item.value("videoId").toString();
   if (id.isEmpty())
     return;

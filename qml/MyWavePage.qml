@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Layouts
 import Sung.Native 1.0
 
 Rectangle {
@@ -29,6 +30,19 @@ Rectangle {
         onReadyChanged: root.seed = ready ? seedColor() : "transparent"
     }
     property color seed: "transparent"
+    property bool tuning: false
+    onTuningChanged: if(tuning) app.loadYandexWaveOptions()
+    onActiveChanged: if(!active) tuning = false
+    // The server names a running personal wave; before it starts, the chosen
+    // options preview that name.
+    readonly property string waveTitle: {
+        if(app.yandexWaveActive && app.yandexWavePersonal && app.yandexWaveTitle) return app.yandexWaveTitle
+        const chosen = app.yandexWaveSettings, names = []
+        for(const c of app.yandexWaveOptions.contexts || []) if(c.seed === chosen.context) names.push(c.name)
+        for(const g of app.yandexWaveOptions.groups || [])
+            for(const v of g.values) if(v.seed === chosen[g.key]) names.push(v.name)
+        return names.length ? names.join(" · ") : "Моя волна"
+    }
     function tint(offset, fallback) {
         if(seed.a === 0) return fallback
         return Qt.hsla(((seed.hslHue < 0 ? 0.78 : seed.hslHue) + offset + 1) % 1,
@@ -72,5 +86,99 @@ Rectangle {
         anchors.centerIn: parent; visible: !app.current.art
         text: "Моя волна"; color: "white"; font.weight: Font.Bold
         font.pixelSize: Math.max(28,Math.min(root.width,root.height)*0.1)
+    }
+    SungText {
+        objectName: "myWaveTitle"
+        anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom; anchors.bottomMargin: 24
+        width: parent.width-48; horizontalAlignment: Text.AlignHCenter; elide: Text.ElideRight
+        visible: root.waveTitle !== "Моя волна"
+        text: root.waveTitle; color: "white"; font.pixelSize: Theme.titleMedium; font.weight: Font.DemiBold
+    }
+    MButton {
+        objectName: "myWaveTune"
+        anchors.top: parent.top; anchors.right: parent.right; anchors.margins: 16
+        visible: app.yandexConnected
+        text: "Настроить"; symbol: "filter"; tonal: true
+        onClicked: root.tuning = !root.tuning
+    }
+    Rectangle {
+        id: tunePanel
+        objectName: "myWaveSettings"
+        visible: root.tuning && app.yandexConnected
+        anchors.top: parent.top; anchors.right: parent.right; anchors.topMargin: 72; anchors.rightMargin: 16
+        width: Math.min(420, root.width-32)
+        height: Math.min(tuneColumn.implicitHeight+32, root.height-88)
+        radius: Theme.shapeLarge; color: Theme.container
+        MElevation { anchors.fill: parent; radius: parent.radius; level: 2 }
+        Flickable {
+            anchors.fill: parent; anchors.margins: 16
+            clip: true; contentHeight: tuneColumn.implicitHeight; boundsBehavior: Flickable.StopAtBounds
+            ScrollBar.vertical: ScrollBar {}
+            ColumnLayout {
+                id: tuneColumn; width: parent.width; spacing: 8
+                MLoadingIndicator {
+                    Layout.alignment: Qt.AlignHCenter
+                    visible: app.yandexWaveOptionsBusy; running: visible; label: "Загрузка настроек волны"
+                }
+                MButton {
+                    Layout.alignment: Qt.AlignHCenter
+                    visible: !app.yandexWaveOptionsBusy && !app.yandexWaveOptions.groups
+                    text: "Повторить"; symbol: "refresh"; onClicked: app.loadYandexWaveOptions()
+                }
+                SungText {
+                    visible: !!app.yandexWaveOptions.contexts
+                    text: "Занятие"; color: Theme.muted; font.pixelSize: Theme.titleSmall; typeRole: "titleSmall"
+                }
+                Flow {
+                    Layout.fillWidth: true; spacing: 8
+                    visible: !!app.yandexWaveOptions.contexts
+                    MChip {
+                        text: "Любое"; selected: !app.yandexWaveSettings.context
+                        onClicked: app.setYandexWaveSetting("context", "")
+                    }
+                    Repeater {
+                        model: app.yandexWaveOptions.contexts || []
+                        MChip {
+                            required property var modelData
+                            objectName: "waveContext_" + modelData.seed
+                            text: modelData.name; selected: app.yandexWaveSettings.context === modelData.seed
+                            onClicked: app.setYandexWaveSetting("context", modelData.seed)
+                        }
+                    }
+                }
+                Repeater {
+                    model: app.yandexWaveOptions.groups || []
+                    ColumnLayout {
+                        id: group
+                        required property var modelData
+                        Layout.fillWidth: true; spacing: 8
+                        SungText {
+                            Layout.topMargin: 8
+                            text: group.modelData.name; color: Theme.muted; font.pixelSize: Theme.titleSmall; typeRole: "titleSmall"
+                        }
+                        Flow {
+                            Layout.fillWidth: true; spacing: 8
+                            Repeater {
+                                model: group.modelData.values
+                                MChip {
+                                    required property var modelData
+                                    objectName: "waveSetting_" + modelData.seed
+                                    text: modelData.name
+                                    selected: modelData.unspecified ? !app.yandexWaveSettings[group.modelData.key]
+                                                                    : app.yandexWaveSettings[group.modelData.key] === modelData.seed
+                                    onClicked: app.setYandexWaveSetting(group.modelData.key, modelData.unspecified ? "" : modelData.seed)
+                                }
+                            }
+                        }
+                    }
+                }
+                MButton {
+                    Layout.alignment: Qt.AlignRight; Layout.topMargin: 8
+                    visible: !!app.yandexWaveOptions.groups
+                    text: "Сбросить"; enabled: Object.keys(app.yandexWaveSettings).length > 0
+                    onClicked: app.resetYandexWaveSettings()
+                }
+            }
+        }
     }
 }
